@@ -1,3 +1,4 @@
+import { supabase } from '../lib/supabase';
 import { useState, useEffect } from "react";
 
 const C = {
@@ -43,8 +44,34 @@ function generateKeywords(query){const q=query.toLowerCase().trim();const words=
 const blogTopicsDB={"asigurare auto":{direct:[{topic:"asigurare auto ieftina",volume:14200},{topic:"asigurare auto online",volume:11800},{topic:"asigurare auto RCA",volume:9400},{topic:"asigurare auto CASCO",volume:8100},{topic:"asigurare auto calculator",volume:6700}],related:[{topic:"parcare laterala",volume:22400},{topic:"amenzi rutiere 2024",volume:18900},{topic:"cum sa eviti accidentele",volume:15600},{topic:"revizie auto cat costa",volume:13200},{topic:"ITP auto",volume:12800},{topic:"anvelope iarna cand se pun",volume:8200}]},"credit ipotecar":{direct:[{topic:"credit ipotecar dobanda",volume:12400},{topic:"credit ipotecar calculator",volume:10800},{topic:"credit ipotecar prima casa",volume:9200}],related:[{topic:"cum cumperi un apartament",volume:19400},{topic:"notar taxe cumparare apartament",volume:14200},{topic:"renovare apartament costuri",volume:10400},{topic:"asigurare locuinta obligatorie",volume:7800}]},"panouri solare":{direct:[{topic:"panouri solare pret",volume:18200},{topic:"panouri solare acasa",volume:14600},{topic:"panouri solare montaj",volume:11200}],related:[{topic:"factura curent electric reduci",volume:22400},{topic:"casa verde program 2024",volume:19800},{topic:"baterie stocare energie solar",volume:16400},{topic:"pompa de caldura avantaje",volume:10200}]}};
 function generateBlogTopics(query){const q=query.toLowerCase().trim();for(const key of Object.keys(blogTopicsDB)){if(q.includes(key)||key.includes(q)){const d=blogTopicsDB[key];return[...d.direct.map(t=>({...t,type:"direct"})),...d.related.map(t=>({...t,type:"related"}))].sort((a,b)=>b.volume-a.volume);}}const direct=[`${q} ghid complet`,`${q} avantaje dezavantaje`,`${q} costuri`,`${q} online`,`${q} recenzii`].map((topic,i)=>({topic,volume:Math.max(500,12000-i*1800+Math.floor(Math.random()*1000)),type:"direct"}));const related=[`sfaturi despre ${q}`,`greseli comune ${q}`,`ghid incepatori ${q}`,`tendinte ${q} 2025`,`beneficii ${q}`].map((topic,i)=>({topic,volume:Math.max(300,20000-i*2200+Math.floor(Math.random()*1500)),type:"related"}));return[...direct,...related].sort((a,b)=>b.volume-a.volume);}
 
-async function loadProjects(){try{const r=await window.storage.get("seo:rank_projects");if(r&&r.value)return JSON.parse(r.value);return[];}catch{return[];}}
-async function saveProjects(p){try{await window.storage.set("seo:rank_projects",JSON.stringify(p));}catch(e){console.error(e);}}
+async function loadProjects(userId) {
+  try {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*, keywords(*, keyword_history(*))')
+      .eq('user_id', userId);
+    if (error) throw error;
+    return data || [];
+  } catch (e) {
+    console.error(e);
+    return [];
+  }
+}
+
+async function saveProject(project, userId) {
+  try {
+    const { data, error } = await supabase
+      .from('projects')
+      .upsert({ ...project, user_id: userId })
+      .select();
+    if (error) throw error;
+    return data[0];
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+}
+
 function mockPosition(){return Math.floor(Math.random()*50)+1;}
 function mockHistory(){let pos=Math.floor(Math.random()*30)+5;return Array.from({length:30},(_,i)=>{pos=Math.max(1,Math.min(100,pos+Math.floor(Math.random()*7)-3));return{date:new Date(Date.now()-(29-i)*24*3600000).toLocaleDateString("ro-RO",{day:"2-digit",month:"short"}),position:pos};});}
 function parseHistoryDate(str){if(!str)return null;const[day,mon]=str.split(" ");const months={ian:0,feb:1,mar:2,apr:3,mai:4,iun:5,iul:6,aug:7,sep:8,oct:9,nov:10,dec:11};const m=months[mon?.toLowerCase()];if(m===undefined)return null;return new Date(new Date().getFullYear(),m,parseInt(day));}
