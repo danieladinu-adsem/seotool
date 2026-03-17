@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const C = {
   orange:"#FF6B2B", orangeLight:"#FFF0EA", orangeMid:"#FF8C55",
@@ -66,30 +66,147 @@ const blogTopicsDB={"asigurare auto":{direct:[{topic:"asigurare auto ieftina",vo
 function generateBlogTopics(query){const q=query.toLowerCase().trim();for(const key of Object.keys(blogTopicsDB)){if(q.includes(key)||key.includes(q)){const d=blogTopicsDB[key];return[...d.direct.map(t=>({...t,type:"direct"})),...d.related.map(t=>({...t,type:"related"}))].sort((a,b)=>b.volume-a.volume);}}const direct=[`${q} ghid complet`,`${q} avantaje dezavantaje`,`${q} costuri`,`${q} online`,`${q} recenzii`].map((topic,i)=>({topic,volume:Math.max(500,12000-i*1800+Math.floor(Math.random()*1000)),type:"direct"}));const related=[`sfaturi despre ${q}`,`greseli comune ${q}`,`ghid incepatori ${q}`,`tendinte ${q} 2025`,`beneficii ${q}`].map((topic,i)=>({topic,volume:Math.max(300,20000-i*2200+Math.floor(Math.random()*1500)),type:"related"}));return[...direct,...related].sort((a,b)=>b.volume-a.volume);}
 
 async function loadProjects(userId) {
+  if (!supabase) { console.log('[loadProjects] supabase client null — env vars lipsă'); return []; }
+  if (!userId) { console.log('[loadProjects] userId undefined — user nelogat'); return []; }
+  console.log('[loadProjects] start, userId:', userId);
   try {
-    const { data, error } = await supabase
+    // 1. Încarcă proiectele userului
+    const { data: projectsData, error: projError } = await supabase
       .from('projects')
-      .select('*, keywords(*, keyword_history(*))')
+      .select('id, name, url, user_id')
       .eq('user_id', userId);
-    if (error) throw error;
-    return data || [];
+    if (projError) {
+      console.log('Supabase error details:', JSON.stringify(projError));
+      throw projError;
+    }
+    console.log('[loadProjects] projects loaded:', projectsData?.length ?? 0);
+
+    const projects = projectsData || [];
+
+    // 2. Pentru fiecare proiect, încarcă keywords + history
+    const result = await Promise.all(projects.map(async project => {
+      const { data: kwData, error: kwError } = await supabase
+        .from('keywords')
+        .select('id, keyword, position, device, url, volume')
+        .eq('project_id', project.id);
+      if (kwError) {
+        console.log('Supabase error details:', JSON.stringify(kwError));
+        console.error('[loadProjects] keywords error pentru project', project.id);
+        return { ...project, keywords: [] };
+      }
+      console.log('[loadProjects] keywords loaded pentru', project.id, ':', kwData?.length ?? 0);
+
+      const keywords = await Promise.all((kwData || []).map(async kw => {
+        const { data: histData, error: histError } = await supabase
+          .from('keyword_history')
+          .select('position, date')
+          .eq('keyword_id', kw.id)
+          .order('date', { ascending: true });
+        if (histError) {
+          console.log('Supabase error details:', JSON.stringify(histError));
+          console.error('[loadProjects] history error pentru keyword', kw.id);
+        }
+        return { ...kw, history: histData || [] };
+      }));
+
+      return { ...project, keywords };
+    }));
+
+    console.log('[loadProjects] done, proiecte cu keywords:', result.length);
+    return result;
   } catch (e) {
-    console.error(e);
+    console.log('Supabase error details:', JSON.stringify(e));
+    console.error('[loadProjects] eroare generală:', e);
     return [];
   }
 }
 
 async function saveProject(project, userId) {
+  if (!supabase) { console.log('[saveProject] supabase client null'); return null; }
+  if (!userId) { console.log('[saveProject] userId undefined'); return null; }
   try {
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('projects')
-      .upsert({ ...project, user_id: userId })
-      .select();
-    if (error) throw error;
-    return data[0];
+      .upsert({ id: String(project.id), name: project.name, url: project.url, user_id: userId });
+    if (error) {
+      console.log('Supabase error details:', JSON.stringify(error));
+      throw error;
+    }
+    return project;
   } catch (e) {
-    console.error(e);
+    console.log('Supabase error details:', JSON.stringify(e));
+    console.error('[saveProject] eroare:', e);
     return null;
+  }
+}
+
+async function saveProjects(projects, userId) {
+  if (!supabase) { console.log('[saveProjects] supabase client null'); return; }
+  if (!userId) { console.log('[saveProjects] userId undefined'); return; }
+  console.log('[saveProjects] start, proiecte:', projects?.length ?? 0, 'userId:', userId);
+  try {
+    for (const project of projects || []) {
+      // 1. Upsert project
+      const { error: projError } = await supabase
+        .from('projects')
+        .upsert({ id: String(project.id), name: project.name, url: project.url, user_id: userId });
+      if (projError) {
+        console.log('Supabase error details:', JSON.stringify(projError));
+        console.error('[saveProjects] eroare project', project.id);
+        continue;
+      }
+      console.log('[saveProjects] project salvat:', project.id);
+
+      // 2. Upsert keywords
+      for (const kw of project.keywords || []) {
+        const { error: kwError } = await supabase
+          .from('keywords')
+          .upsert({
+            id: String(kw.id),
+            project_id: String(project.id),
+            keyword: kw.keyword,
+            position: kw.position,
+            device: kw.device,
+            url: kw.url || '',
+            volume: kw.volume || 0,
+          });
+        if (kwError) {
+          console.log('Supabase error details:', JSON.stringify(kwError));
+          console.error('[saveProjects] eroare keyword', kw.id, kw.keyword);
+          continue;
+        }
+
+        // 3. Salvează keyword_history: DELETE + INSERT (nu necesită constraint UNIQUE)
+        const historyRows = (kw.history || [])
+          .filter(h => h.date != null && h.position != null)
+          .map(h => ({
+            keyword_id: String(kw.id),
+            date: String(h.date),
+            position: parseInt(h.position, 10),
+          }));
+        const { error: delHistError } = await supabase
+          .from('keyword_history')
+          .delete()
+          .eq('keyword_id', String(kw.id));
+        if (delHistError) {
+          console.log('Supabase error details:', JSON.stringify(delHistError));
+          console.error('[saveProjects] eroare delete history pentru keyword', kw.id);
+        }
+        if (historyRows.length > 0) {
+          const { error: histError } = await supabase
+            .from('keyword_history')
+            .insert(historyRows);
+          if (histError) {
+            console.log('Supabase error details:', JSON.stringify(histError));
+            console.error('[saveProjects] eroare insert history pentru keyword', kw.id);
+          }
+        }
+      }
+    }
+    console.log('[saveProjects] done');
+  } catch (e) {
+    console.log('Supabase error details:', JSON.stringify(e));
+    console.error('[saveProjects] eroare generală:', e);
   }
 }
 
@@ -215,21 +332,38 @@ function LoginScreen({onLogin}){const[username,setUsername]=useState("");const[p
 function KeywordResearch({onAddToTracker}){const[query,setQuery]=useState("");const[results,setResults]=useState(null);const[loading,setLoading]=useState(false);const[searched,setSearched]=useState("");const[sortDir,setSortDir]=useState("desc");const[includeWord,setIncludeWord]=useState("");const[excludeWord,setExcludeWord]=useState("");const[selected,setSelected]=useState(new Set());const[added,setAdded]=useState(false);const handleSearch= async ()=>{if(!query.trim())return;setLoading(true);setResults(null);setSelected(new Set());generateKeywords(query).then(res=>{setResults(res);setSearched(query);setSortDir("desc");setLoading(false);});};const sorted=results?[...results].filter(r=>r.volume>0).filter(r=>includeWord.trim()===""||r.keyword.toLowerCase().includes(includeWord.toLowerCase())).filter(r=>excludeWord.trim()===""||!r.keyword.toLowerCase().includes(excludeWord.toLowerCase())).sort((a,b)=>sortDir==="desc"?b.volume-a.volume:a.volume-b.volume):[];const maxVol=results?Math.max(...results.map(r=>r.volume)):1;const toggleSelect=kw=>{const s=new Set(selected);s.has(kw)?s.delete(kw):s.add(kw);setSelected(s);};const toggleAll=e=>{if(e.target.checked)setSelected(new Set(sorted.map(r=>r.keyword)));else setSelected(new Set());};const handleAddToTracker=()=>{if(selected.size===0)return;onAddToTracker([...selected]);setAdded(true);setTimeout(()=>setAdded(false),2000);};return <div><h1 style={{fontSize:22,fontWeight:700,marginBottom:4}}>Keyword Research</h1><p style={{color:C.grayText,fontSize:14,marginBottom:24}}>Descopera volume de cautare si variatii de keywords pentru Romania.</p><div style={{display:"flex",gap:10,marginBottom:28}}><div style={{flex:1,position:"relative"}}><span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:C.grayText}}>🔍</span><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSearch()} placeholder="Ex: bec led, pantofi sport..." style={{width:"100%",padding:"12px 14px 12px 40px",border:`1.5px solid ${C.border}`,borderRadius:10,fontSize:15,outline:"none",background:C.white,boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></div><button onClick={handleSearch} style={{padding:"12px 28px",background:C.orange,color:C.white,border:"none",borderRadius:10,fontWeight:600,fontSize:15,cursor:"pointer"}}>Cauta</button></div>{loading&&<EmptyState icon="⏳" title="Se incarca rezultatele..."/>}{results&&!loading&&<div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}><div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:14,color:C.grayText}}><strong style={{color:C.navy}}>{results.length}</strong> keyword-uri pentru <strong style={{color:C.orange}}>"{searched}"</strong></span><span style={{fontSize:12,background:"#E8F5E9",color:"#2E7D32",padding:"3px 10px",borderRadius:12,fontWeight:500}}>🇷🇴 Romania</span></div><div style={{display:"flex",gap:8}}>{selected.size>0&&<button onClick={handleAddToTracker} style={{padding:"8px 16px",background:added?"#E8F5E9":C.orangeLight,border:`1.5px solid ${added?"#2E7D32":C.orange}`,borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:added?"#2E7D32":C.orange}}>{added?"Adaugate!":`Adauga in Rank Tracker (${selected.size})`}</button>}<button onClick={()=>exportCSV(sorted,searched)} style={{padding:"8px 16px",background:C.white,border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,fontWeight:500,cursor:"pointer",color:C.grayDark}}>Export CSV</button></div></div><div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap"}}><div style={{flex:1,position:"relative",minWidth:180}}><span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>✅</span><input value={includeWord} onChange={e=>setIncludeWord(e.target.value)} placeholder="Include doar keywords cu..." style={{width:"100%",padding:"9px 12px 9px 32px",border:`1.5px solid ${C.green}`,borderRadius:8,fontSize:13,outline:"none",background:"#f0fdf4",boxSizing:"border-box",color:C.navy}}/></div><div style={{flex:1,position:"relative",minWidth:180}}><span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>🚫</span><input value={excludeWord} onChange={e=>setExcludeWord(e.target.value)} placeholder="Exclude keywords cu..." style={{width:"100%",padding:"9px 12px 9px 32px",border:`1.5px solid ${C.red}`,borderRadius:8,fontSize:13,outline:"none",background:"#fef2f2",boxSizing:"border-box",color:C.navy}}/></div></div><div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,overflow:"hidden"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{background:C.gray,borderBottom:`1px solid ${C.border}`}}><th style={{padding:"12px 16px",width:40}}><input type="checkbox" onChange={toggleAll}/></th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em"}}># Keyword</th><th onClick={()=>setSortDir(d=>d==="desc"?"asc":"desc")} style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.orange,textTransform:"uppercase",letterSpacing:"0.05em",cursor:"pointer",width:180}}>Volum {sortDir==="desc"?"▼":"▲"}</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:120}}>Trend 12 luni</th></tr></thead><tbody>{sorted.map((row,i)=><tr key={i} style={{borderBottom:`1px solid ${C.grayMid}`,background:selected.has(row.keyword)?C.orangeLight:"transparent"}} onMouseEnter={e=>{if(!selected.has(row.keyword))e.currentTarget.style.background=C.gray;}} onMouseLeave={e=>{e.currentTarget.style.background=selected.has(row.keyword)?C.orangeLight:"transparent";}}><td style={{padding:"13px 16px",textAlign:"center"}}><input type="checkbox" checked={selected.has(row.keyword)} onChange={()=>toggleSelect(row.keyword)}/></td><td style={{padding:"13px 16px"}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:11,color:C.grayMid,minWidth:20}}>{i+1}</span><span style={{fontWeight:500,fontSize:14,color:C.navy}}>{row.keyword}</span></div></td><td style={{padding:"13px 16px"}}><VolumeBar volume={row.volume} max={maxVol}/></td><td style={{padding:"13px 16px"}}><MiniTrend data={row.trend}/></td></tr>)}</tbody></table></div><p style={{marginTop:14,fontSize:12,color:C.grayText,textAlign:"center"}}>* Date simulate</p></div>}{!results&&!loading&&<EmptyState icon="🔎" title="Introdu un cuvant cheie pentru a incepe" subtitle='Ex: "bec led", "pantofi sport", "telefon samsung"'/>}</div>;}
 
 // ── Blog Topics ───────────────────────────────────────────────────────────────
-function BlogTopics(){const[query,setQuery]=useState("");const[results,setResults]=useState(null);const[loading,setLoading]=useState(false);const[searched,setSearched]=useState("");const[filter,setFilter]=useState("all");const handleSearch= async ()=>{if(!query.trim())return;setLoading(true);setResults(null);setTimeout(()=>{setResults(generateBlogTopics(query));setSearched(query);setFilter("all");setLoading(false);},800);};const filtered=results?results.filter(r=>filter==="all"||r.type===filter):[];const maxVol=results?Math.max(...results.map(r=>r.volume)):1;return <div><h1 style={{fontSize:22,fontWeight:700,marginBottom:4}}>Blog Topic Finder</h1><p style={{color:C.grayText,fontSize:14,marginBottom:24}}>Descopera idei de articole de blog cu volum mare de cautari.</p><div style={{display:"flex",gap:10,marginBottom:28}}><div style={{flex:1,position:"relative"}}><span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:C.grayText}}>✍️</span><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSearch()} placeholder="Ex: asigurare auto, credit ipotecar..." style={{width:"100%",padding:"12px 14px 12px 42px",border:`1.5px solid ${C.border}`,borderRadius:10,fontSize:15,outline:"none",background:C.white,boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></div><button onClick={handleSearch} style={{padding:"12px 28px",background:C.orange,color:C.white,border:"none",borderRadius:10,fontWeight:600,fontSize:15,cursor:"pointer"}}>Cauta</button></div>{loading&&<EmptyState icon="⏳" title="Se genereaza subiectele..."/>}{results&&!loading&&<div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}><span style={{fontSize:14,color:C.grayText}}><strong style={{color:C.navy}}>{filtered.length}</strong> subiecte pentru <strong style={{color:C.orange}}>"{searched}"</strong></span><div style={{display:"flex",gap:6}}>{[["all","Toate"],["direct","Direct legate"],["related","Conexe"]].map(([val,label])=><button key={val} onClick={()=>setFilter(val)} style={{padding:"6px 14px",borderRadius:8,border:"1.5px solid",fontSize:13,cursor:"pointer",fontWeight:500,borderColor:filter===val?C.orange:C.border,background:filter===val?C.orangeLight:C.white,color:filter===val?C.orange:C.grayText}}>{label}</button>)}</div></div><div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,overflow:"hidden"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{background:C.gray,borderBottom:`1px solid ${C.border}`}}><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:40}}>#</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em"}}>Subiect</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:120}}>Tip</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:160}}>Volum lunar</th></tr></thead><tbody>{filtered.map((row,i)=>{const isDirect=row.type==="direct";return <tr key={i} style={{borderBottom:`1px solid ${C.grayMid}`}} onMouseEnter={e=>e.currentTarget.style.background=C.gray} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"13px 16px",fontSize:12,color:C.grayMid}}>{i+1}</td><td style={{padding:"13px 16px",fontWeight:500,fontSize:14,color:C.navy}}>{row.topic}</td><td style={{padding:"13px 16px"}}><span style={{fontSize:11,padding:"3px 10px",borderRadius:12,fontWeight:500,background:isDirect?C.orangeLight:"#EEF1F8",color:isDirect?C.orange:C.navy}}>{isDirect?"Direct":"Conex"}</span></td><td style={{padding:"13px 16px"}}><VolumeBar volume={row.volume} max={maxVol} color={isDirect?C.orange:C.navy}/></td></tr>;})}</tbody></table></div><p style={{marginTop:14,fontSize:12,color:C.grayText,textAlign:"center"}}>* Date simulate</p></div>}{!results&&!loading&&<EmptyState icon="✍️" title="Introdu un subiect pentru a descoperi idei de blog"/>}</div>;}
-
+function BlogTopics(){const[query,setQuery]=useState("");const[results,setResults]=useState(null);const[loading,setLoading]=useState(false);const[searched,setSearched]=useState("");const[filter,setFilter]=useState("all");const[includeWord,setIncludeWord]=useState("");const[excludeWord,setExcludeWord]=useState("");const handleSearch=async()=>{if(!query.trim())return;setLoading(true);setResults(null);try{const res=await fetch('/api/blogtopics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query})});const data=await res.json();setResults(data.topics||[]);setSearched(query);setFilter("all");}catch(e){console.error(e);setResults([]);}finally{setLoading(false);}};const filtered=results?results.filter(r=>r.volume>0).filter(r=>filter==="all"||r.type===filter).filter(r=>includeWord.trim()===""||r.topic.toLowerCase().includes(includeWord.toLowerCase())).filter(r=>excludeWord.trim()===""||!r.topic.toLowerCase().includes(excludeWord.toLowerCase())):[];const maxVol=filtered.length?Math.max(...filtered.map(r=>r.volume)):1;return <div><h1 style={{fontSize:22,fontWeight:700,marginBottom:4}}>Blog Topic Finder</h1><p style={{color:C.grayText,fontSize:14,marginBottom:24}}>Descopera idei de articole de blog cu volum mare de cautari.</p><div style={{display:"flex",gap:10,marginBottom:28}}><div style={{flex:1,position:"relative"}}><span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:C.grayText}}>✍️</span><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSearch()} placeholder="Ex: asigurare auto, credit ipotecar..." style={{width:"100%",padding:"12px 14px 12px 42px",border:`1.5px solid ${C.border}`,borderRadius:10,fontSize:15,outline:"none",background:C.white,boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></div><button onClick={handleSearch} style={{padding:"12px 28px",background:C.orange,color:C.white,border:"none",borderRadius:10,fontWeight:600,fontSize:15,cursor:"pointer"}}>Cauta</button></div>{loading&&<EmptyState icon="⏳" title="Se incarca rezultatele..."/>}{results&&!loading&&<div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}><span style={{fontSize:14,color:C.grayText}}><strong style={{color:C.navy}}>{filtered.length}</strong> subiecte pentru <strong style={{color:C.orange}}>"{searched}"</strong></span><div style={{display:"flex",gap:6}}>{[["all","Toate"],["direct","Direct legate"],["related","Conexe"]].map(([val,label])=><button key={val} onClick={()=>setFilter(val)} style={{padding:"6px 14px",borderRadius:8,border:"1.5px solid",fontSize:13,cursor:"pointer",fontWeight:500,borderColor:filter===val?C.orange:C.border,background:filter===val?C.orangeLight:C.white,color:filter===val?C.orange:C.grayText}}>{label}</button>)}</div></div><div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap"}}><div style={{flex:1,position:"relative",minWidth:180}}><span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>✅</span><input value={includeWord} onChange={e=>setIncludeWord(e.target.value)} placeholder="Include doar subiecte cu..." style={{width:"100%",padding:"9px 12px 9px 32px",border:`1.5px solid ${C.green}`,borderRadius:8,fontSize:13,outline:"none",background:"#f0fdf4",boxSizing:"border-box",color:C.navy}}/></div><div style={{flex:1,position:"relative",minWidth:180}}><span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>🚫</span><input value={excludeWord} onChange={e=>setExcludeWord(e.target.value)} placeholder="Exclude subiecte cu..." style={{width:"100%",padding:"9px 12px 9px 32px",border:`1.5px solid ${C.red}`,borderRadius:8,fontSize:13,outline:"none",background:"#fef2f2",boxSizing:"border-box",color:C.navy}}/></div></div><div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,overflow:"hidden"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{background:C.gray,borderBottom:`1px solid ${C.border}`}}><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:40}}>#</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em"}}>Subiect</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:120}}>Tip</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:160}}>Volum lunar</th></tr></thead><tbody>{filtered.map((row,i)=>{const isDirect=row.type==="direct";return <tr key={i} style={{borderBottom:`1px solid ${C.grayMid}`}} onMouseEnter={e=>e.currentTarget.style.background=C.gray} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"13px 16px",fontSize:12,color:C.grayMid}}>{i+1}</td><td style={{padding:"13px 16px",fontWeight:500,fontSize:14,color:C.navy}}>{row.topic}</td><td style={{padding:"13px 16px"}}><span style={{fontSize:11,padding:"3px 10px",borderRadius:12,fontWeight:500,background:isDirect?C.orangeLight:"#EEF1F8",color:isDirect?C.orange:C.navy}}>{isDirect?"Direct":"Conex"}</span></td><td style={{padding:"13px 16px"}}><VolumeBar volume={row.volume} max={maxVol} color={isDirect?C.orange:C.navy}/></td></tr>;})}</tbody></table></div></div>}{!results&&!loading&&<EmptyState icon="✍️" title="Introdu un subiect pentru a descoperi idei de blog"/>}</div>;}
 // ── Rank Tracker ──────────────────────────────────────────────────────────────
-function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initialProjectId}){
-  const[projects,setProjects]=useState(null);const[loading,setLoading]=useState(true);const[activeProject,setActiveProject]=useState(initialProjectId||null);const[showNewProject,setShowNewProject]=useState(false);const[newProjectName,setNewProjectName]=useState("");const[newProjectUrl,setNewProjectUrl]=useState("");const[newKw,setNewKw]=useState("");const[newDevice,setNewDevice]=useState("desktop");const[showAddKw,setShowAddKw]=useState(false);const[sortKw,setSortKw]=useState("pos_asc");const[checking,setChecking]=useState(false);
-  useEffect(()=>{loadProjects().then(p=>{const ps=p||[];setProjects(ps);if(initialProjectId)setActiveProject(initialProjectId);else if(ps.length>0)setActiveProject(ps[0].id);setLoading(false);onProjectsLoaded&&onProjectsLoaded(ps);}).catch(()=>{setProjects([]);setLoading(false);});},[]);
+function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initialProjectId,userId}){
+  const[projects,setProjects]=useState(null);const[loading,setLoading]=useState(true);const[activeProject,setActiveProject]=useState(initialProjectId||null);const[showNewProject,setShowNewProject]=useState(false);const[newProjectName,setNewProjectName]=useState("");const[newProjectUrl,setNewProjectUrl]=useState("");const[newKw,setNewKw]=useState("");const[newDevice,setNewDevice]=useState("desktop");const[showAddKw,setShowAddKw]=useState(false);const[sortKw,setSortKw]=useState("pos_asc");const[checking,setChecking]=useState(false);const[showDeleteConfirm,setShowDeleteConfirm]=useState(false);const[deleting,setDeleting]=useState(false);
+  useEffect(()=>{loadProjects(userId).then(p=>{const ps=p||[];setProjects(ps);if(initialProjectId)setActiveProject(initialProjectId);else if(ps.length>0)setActiveProject(ps[0].id);setLoading(false);onProjectsLoaded&&onProjectsLoaded(ps);}).catch(()=>{setProjects([]);setLoading(false);});},[userId]);
   useEffect(()=>{if(initialProjectId)setActiveProject(initialProjectId);},[initialProjectId]);
   useEffect(()=>{if(pendingKeywords&&pendingKeywords.length>0&&projects&&projects.length>0){addKeywordsToProject(activeProject||projects[0].id,pendingKeywords);onPendingConsumed();}},[pendingKeywords,projects]);
-  const saveAndUpdate=updated=>{setProjects(updated);saveProjects(updated);onProjectsLoaded&&onProjectsLoaded(updated);};
+  const saveAndUpdate=updated=>{setProjects(updated);saveProjects(updated,userId);onProjectsLoaded&&onProjectsLoaded(updated);};
   const addProject=()=>{if(!newProjectName.trim())return;const proj={id:Date.now(),name:newProjectName.trim(),url:newProjectUrl.trim(),keywords:[]};const updated=[...(projects||[]),proj];saveAndUpdate(updated);setActiveProject(proj.id);setShowNewProject(false);setNewProjectName("");setNewProjectUrl("");};
   const addKeywordsToProject=(projId,keywords)=>{const updated=(projects||[]).map(p=>{if(p.id!==projId)return p;const existing=new Set(p.keywords.map(k=>k.keyword));const newOnes=keywords.filter(kw=>!existing.has(kw)).map(kw=>({id:Date.now()+Math.random(),keyword:kw,position:mockPosition(),url:"",device:newDevice,history:mockHistory()}));return{...p,keywords:[...p.keywords,...newOnes]};});saveAndUpdate(updated);};
   const addSingleKeyword=projId=>{if(!newKw.trim())return;addKeywordsToProject(projId,[newKw.trim()]);setNewKw("");setShowAddKw(false);};
   const removeKeyword=(projId,kwId)=>saveAndUpdate((projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.filter(k=>k.id!==kwId)}));
   const updateUrl=(projId,kwId,url)=>saveAndUpdate((projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.map(k=>k.id!==kwId?k:{...k,url})}));
-  const deleteProject=projId=>{const updated=(projects||[]).filter(p=>p.id!==projId);saveAndUpdate(updated);setActiveProject(updated.length>0?updated[0].id:null);};
+  const deleteProject=async projId=>{
+    if(supabase&&userId){
+      const proj=(projects||[]).find(p=>p.id===projId);
+      if(proj){
+        for(const kw of proj.keywords||[]){
+          const{error:hErr}=await supabase.from('keyword_history').delete().eq('keyword_id',String(kw.id));
+          if(hErr)console.log('Supabase error details:',JSON.stringify(hErr));
+        }
+        const{error:kErr}=await supabase.from('keywords').delete().eq('project_id',String(projId));
+        if(kErr)console.log('Supabase error details:',JSON.stringify(kErr));
+      }
+      const{error:pErr}=await supabase.from('projects').delete().eq('id',String(projId));
+      if(pErr){console.log('Supabase error details:',JSON.stringify(pErr));return;}
+    }
+    const updated=(projects||[]).filter(p=>p.id!==projId);
+    setProjects(updated);
+    onProjectsLoaded&&onProjectsLoaded(updated);
+    setActiveProject(updated.length>0?updated[0].id:null);
+  };
   const bulkDevice=val=>saveAndUpdate((projects||[]).map(p=>p.id!==activeProject?p:{...p,keywords:p.keywords.map(k=>({...k,device:val}))}));
   const checkNow=()=>{setChecking(true);setTimeout(()=>{const updated=(projects||[]).map(p=>{if(p.id!==activeProject)return p;const keywords=p.keywords.map(k=>{const newPos=Math.max(1,Math.min(100,k.position+Math.floor(Math.random()*11)-5));const today=new Date().toLocaleDateString("ro-RO",{day:"2-digit",month:"short"});const history=[...(k.history||[]).slice(-29),{date:today,position:newPos}];return{...k,position:newPos,history};});return{...p,keywords};});saveAndUpdate(updated);setChecking(false);},1500);};
   const getSortedKeywords=keywords=>{if(!keywords)return[];const kws=[...keywords];if(sortKw==="volume_desc")return kws.sort((a,b)=>(b.volume||0)-(a.volume||0));if(sortKw==="volume_asc")return kws.sort((a,b)=>(a.volume||0)-(b.volume||0));if(sortKw==="pos_asc")return kws.sort((a,b)=>a.position-b.position);if(sortKw==="pos_desc")return kws.sort((a,b)=>b.position-a.position);if(sortKw==="alpha")return kws.sort((a,b)=>a.keyword.localeCompare(b.keyword));return kws;};
@@ -241,6 +375,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
         <div><h1 style={{fontSize:22,fontWeight:700,marginBottom:4}}>Rank Tracker</h1><p style={{color:C.grayText,fontSize:14}}>Monitorizeaza pozitiile site-ului tau in Google.</p></div>
         <button onClick={()=>setShowNewProject(true)} style={{padding:"10px 18px",background:C.orange,color:C.white,border:"none",borderRadius:10,fontWeight:600,fontSize:14,cursor:"pointer"}}>+ Proiect nou</button>
       </div>
+      {showDeleteConfirm&&proj&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}><div style={{background:C.white,borderRadius:16,padding:32,width:420,boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}><div style={{fontSize:36,marginBottom:12,textAlign:"center"}}>🗑</div><h2 style={{fontSize:18,fontWeight:700,marginBottom:8,textAlign:"center",color:C.navy}}>Sterge proiect</h2><p style={{fontSize:14,color:C.grayText,textAlign:"center",marginBottom:6}}>Ești sigur că vrei să ștergi proiectul</p><p style={{fontSize:15,fontWeight:700,color:"#ef4444",textAlign:"center",marginBottom:24}}>"{proj.name}"?</p><p style={{fontSize:12,color:C.grayText,textAlign:"center",marginBottom:24,padding:"8px 12px",background:"#fff5f5",borderRadius:8,border:"1px solid #fca5a5"}}>Această acțiune este ireversibilă. Se vor șterge proiectul, toate keyword-urile și tot istoricul de poziții.</p><div style={{display:"flex",gap:10}}><button disabled={deleting} onClick={async()=>{setDeleting(true);await deleteProject(proj.id);setShowDeleteConfirm(false);setDeleting(false);}} style={{flex:1,padding:"11px",background:deleting?"#fca5a5":"#ef4444",color:C.white,border:"none",borderRadius:8,fontWeight:700,fontSize:14,cursor:deleting?"not-allowed":"pointer"}}>{deleting?"Se sterge...":"Da, sterge"}</button><button disabled={deleting} onClick={()=>setShowDeleteConfirm(false)} style={{flex:1,padding:"11px",background:C.gray,border:`1.5px solid ${C.border}`,borderRadius:8,fontWeight:600,fontSize:14,cursor:"pointer",color:C.grayDark}}>Anulează</button></div></div></div>}
       {showNewProject&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.3)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100}}><div style={{background:C.white,borderRadius:16,padding:32,width:400,boxShadow:"0 20px 60px rgba(0,0,0,0.15)"}}><h2 style={{fontSize:18,fontWeight:700,marginBottom:20}}>Proiect nou</h2><div style={{marginBottom:14}}><label style={{fontSize:13,fontWeight:500,color:C.grayDark,display:"block",marginBottom:6}}>Nume proiect</label><input value={newProjectName} onChange={e=>setNewProjectName(e.target.value)} placeholder="Ex: Site-ul meu" style={{width:"100%",padding:"10px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:14,outline:"none",boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></div><div style={{marginBottom:24}}><label style={{fontSize:13,fontWeight:500,color:C.grayDark,display:"block",marginBottom:6}}>URL site</label><input value={newProjectUrl} onChange={e=>setNewProjectUrl(e.target.value)} placeholder="Ex: https://siteulmeu.ro" style={{width:"100%",padding:"10px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:14,outline:"none",boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></div><div style={{display:"flex",gap:10}}><button onClick={addProject} style={{flex:1,padding:"10px",background:C.orange,color:C.white,border:"none",borderRadius:8,fontWeight:600,cursor:"pointer"}}>Creeaza</button><button onClick={()=>setShowNewProject(false)} style={{flex:1,padding:"10px",background:C.gray,border:`1.5px solid ${C.border}`,borderRadius:8,fontWeight:500,cursor:"pointer",color:C.grayText}}>Anuleaza</button></div></div></div>}
       {projects?.length>0&&<div style={{display:"flex",gap:20}}>
         <div style={{width:200,flexShrink:0}}>
@@ -260,7 +395,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
               </div>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>setShowAddKw(v=>!v)} style={{padding:"8px 16px",background:C.orangeLight,border:`1.5px solid ${C.orange}`,borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:C.orange}}>+ Adauga keyword</button>
-                <button onClick={()=>deleteProject(proj.id)} style={{padding:"8px 12px",background:"#fff5f5",border:"1.5px solid #fca5a5",borderRadius:8,fontSize:13,cursor:"pointer",color:"#ef4444"}}>🗑</button>
+                <button onClick={()=>setShowDeleteConfirm(true)} style={{padding:"8px 16px",background:"#ef4444",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#ffffff"}}>Sterge proiect</button>
               </div>
             </div>
             {showAddKw&&<div style={{background:C.gray,border:`1.5px solid ${C.border}`,borderRadius:10,padding:16,marginBottom:16,display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}><div style={{flex:1,minWidth:180}}><label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:4}}>Keyword</label><input value={newKw} onChange={e=>setNewKw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSingleKeyword(proj.id)} placeholder="Ex: pantofi sport ieftini" style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:14,outline:"none",boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></div><div><label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:4}}>Dispozitiv</label><select value={newDevice} onChange={e=>setNewDevice(e.target.value)} style={{padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:14,outline:"none",background:C.white,cursor:"pointer"}}><option value="desktop">Desktop</option><option value="mobile">Mobil</option></select></div><button onClick={()=>addSingleKeyword(proj.id)} style={{padding:"9px 18px",background:C.orange,color:C.white,border:"none",borderRadius:8,fontWeight:600,fontSize:14,cursor:"pointer"}}>Adauga</button></div>}
@@ -274,8 +409,933 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
 }
 
 // ── Forecasting ───────────────────────────────────────────────────────────────
-function Forecasting({projects}){const[selectedProj,setSelectedProj]=useState(null);const[convRate,setConvRate]=useState(2);const[avgOrder,setAvgOrder]=useState(250);const[monthlyCost,setMonthlyCost]=useState(2000);const[horizon,setHorizon]=useState(6);const[scenario,setScenario]=useState("realistic");const[manualKws,setManualKws]=useState([{id:1,keyword:"pantofi sport",volume:22000,currentPos:18,targetPos:5},{id:2,keyword:"pantofi sport ieftini",volume:8500,currentPos:24,targetPos:8},{id:3,keyword:"adidas pantofi",volume:5200,currentPos:35,targetPos:12}]);const[newKw,setNewKw]=useState({keyword:"",volume:"",currentPos:"",targetPos:""});const[source,setSource]=useState("manual");const trackerKws=selectedProj?(selectedProj.keywords||[]).map(k=>({id:k.id,keyword:k.keyword,volume:k.volume||Math.floor(Math.random()*5000+500),currentPos:k.position,targetPos:Math.max(1,Math.floor(k.position*(scenario==="optimistic"?0.4:scenario==="realistic"?0.6:0.8)))})):[];const kws=source==="tracker"?trackerKws:manualKws;const scenMult={optimistic:1.4,realistic:1.0,pessimistic:0.6};const mult=scenMult[scenario];const calcKw=kw=>{const curCTR=getCTR(kw.currentPos);const tgtCTR=getCTR(kw.targetPos);const curTraffic=Math.round(kw.volume*curCTR);const tgtTraffic=Math.round(kw.volume*tgtCTR);return{...kw,curCTR,tgtCTR,curTraffic,tgtTraffic,trafficGain:tgtTraffic-curTraffic};};const calcedKws=kws.map(calcKw);const totalCurTraffic=calcedKws.reduce((s,k)=>s+k.curTraffic,0);const totalTgtTraffic=calcedKws.reduce((s,k)=>s+k.tgtTraffic,0);const totalGain=totalTgtTraffic-totalCurTraffic;const months=Array.from({length:horizon},(_,i)=>{const progress=Math.min(1,((i+1)/horizon)*mult);const traffic=Math.round(totalCurTraffic+totalGain*progress);const conversions=traffic*(convRate/100);const revenue=conversions*avgOrder;return{month:i+1,traffic,conversions:Math.round(conversions),revenue:Math.round(revenue),cost:monthlyCost,roi:monthlyCost>0?Math.round((revenue-monthlyCost)/monthlyCost*100):0};});const finalMonth=months[months.length-1];const totalRevenue=months.reduce((s,m)=>s+m.revenue,0);const totalCost=months.reduce((s,m)=>s+m.cost,0);const overallROI=totalCost>0?Math.round((totalRevenue-totalCost)/totalCost*100):0;const svgW=560,H=130,pad={t:12,r:16,b:28,l:44};const maxTraffic=Math.max(...months.map(m=>m.traffic),1);const maxRev=Math.max(...months.map(m=>m.revenue),1);const invY=(y,H,pad)=>pad.t+(H-pad.t-pad.b)-(y-pad.t);const tPtsInv=months.map((m,i)=>({x:pad.l+(i/Math.max(months.length-1,1))*(svgW-pad.l-pad.r),y:invY(pad.t+(m.traffic/maxTraffic)*(H-pad.t-pad.b),H,pad),traffic:m.traffic,month:m.month}));const rPtsInv=months.map((m,i)=>({x:pad.l+(i/Math.max(months.length-1,1))*(svgW-pad.l-pad.r),y:invY(pad.t+(m.revenue/maxRev)*(H-pad.t-pad.b),H,pad),revenue:m.revenue,month:m.month}));const toLine=pts=>pts.map(p=>`${p.x},${p.y}`).join(" ");const[chartTip,setChartTip]=useState(null);const addManualKw=()=>{if(!newKw.keyword||!newKw.volume)return;setManualKws(prev=>[...prev,{id:Date.now(),keyword:newKw.keyword,volume:parseInt(newKw.volume)||0,currentPos:parseInt(newKw.currentPos)||20,targetPos:parseInt(newKw.targetPos)||5}]);setNewKw({keyword:"",volume:"",currentPos:"",targetPos:""});};const removeKw=id=>setManualKws(prev=>prev.filter(k=>k.id!==id));const updateTargetPos=(id,val)=>setManualKws(prev=>prev.map(k=>k.id===id?{...k,targetPos:Math.max(1,Math.min(100,parseInt(val)||1))}:k));const scenarioColors={optimistic:C.green,realistic:C.navy,pessimistic:C.grayText};const scenarioLabels={optimistic:"Optimist",realistic:"Realist",pessimistic:"Pesimist"};
-return(<div><h1 style={{fontSize:22,fontWeight:700,marginBottom:4}}>SEO Forecasting</h1><p style={{color:C.grayText,fontSize:14,marginBottom:24}}>Estimeaza trafic, conversii, venit si ROI pe baza obiectivelor de pozitionare.</p><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:24}}>{[{label:"Rata conversie (%)",val:convRate,set:setConvRate,min:0.1,max:20,step:0.1},{label:"Valoare medie comanda (RON)",val:avgOrder,set:setAvgOrder,min:1,max:10000,step:10},{label:"Cost lunar SEO (RON)",val:monthlyCost,set:setMonthlyCost,min:0,max:50000,step:100},{label:"Orizont (luni)",val:horizon,set:setHorizon,min:1,max:24,step:1}].map((f,i)=><div key={i} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px"}}><label style={{fontSize:11,color:C.grayText,fontWeight:500,display:"block",marginBottom:6}}>{f.label}</label><input type="number" value={f.val} min={f.min} max={f.max} step={f.step} onChange={e=>f.set(parseFloat(e.target.value)||0)} style={{width:"100%",fontSize:16,fontWeight:700,color:C.navy,border:"none",outline:"none",background:"transparent",boxSizing:"border-box"}}/></div>)}</div><div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}><div style={{display:"flex",gap:6}}>{["optimistic","realistic","pessimistic"].map(s=><button key={s} onClick={()=>setScenario(s)} style={{padding:"7px 16px",borderRadius:8,border:"1.5px solid",fontSize:13,cursor:"pointer",fontWeight:600,borderColor:scenario===s?scenarioColors[s]:C.border,background:scenario===s?scenarioColors[s]:C.white,color:scenario===s?C.white:C.grayText}}>{scenarioLabels[s]}</button>)}</div><div style={{height:24,width:1,background:C.border}}/><div style={{display:"flex",gap:6}}><button onClick={()=>setSource("manual")} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid",fontSize:12,cursor:"pointer",fontWeight:500,borderColor:source==="manual"?C.orange:C.border,background:source==="manual"?C.orangeLight:C.white,color:source==="manual"?C.orange:C.grayText}}>✏️ Keywords manuale</button><button onClick={()=>setSource("tracker")} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid",fontSize:12,cursor:"pointer",fontWeight:500,borderColor:source==="tracker"?C.orange:C.border,background:source==="tracker"?C.orangeLight:C.white,color:source==="tracker"?C.orange:C.grayText}}>📈 Din Rank Tracker</button></div>{source==="tracker"&&<select value={selectedProj?.id||""} onChange={e=>{const p=projects?.find(p=>p.id===parseInt(e.target.value));setSelectedProj(p||null);}} style={{padding:"7px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",background:C.white,cursor:"pointer",color:C.navy}}><option value="">Selecteaza proiect...</option>{(projects||[]).map(p=><option key={p.id} value={p.id}>{p.name} ({p.keywords.length} kw)</option>)}</select>}</div><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>{[{label:"Trafic curent / lună",value:fmtN(totalCurTraffic),sub:"vizitatori organici",color:C.grayText,bg:C.gray},{label:`Trafic estimat / lună`,value:fmtN(totalTgtTraffic),sub:`+${fmtN(totalGain)} vizitatori`,color:C.navy,bg:"#EEF1F8"},{label:`Venit estimat (luna ${horizon})`,value:fmtRON(finalMonth.revenue),sub:`${finalMonth.conversions} conversii`,color:C.orange,bg:C.orangeLight},{label:`ROI total (${horizon} luni)`,value:`${overallROI}%`,sub:overallROI>0?"Profitabil ✓":"Sub break-even",color:overallROI>0?C.green:C.red,bg:overallROI>0?C.greenLight:C.redLight}].map((s,i)=><div key={i} style={{background:s.bg,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:11,color:C.grayText,fontWeight:500,marginBottom:4}}>{s.label}</div><div style={{fontSize:22,fontWeight:700,color:s.color,marginBottom:2}}>{s.value}</div><div style={{fontSize:11,color:C.grayText}}>{s.sub}</div></div>)}</div><div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:20,marginBottom:20}}><div style={{fontWeight:600,fontSize:14,marginBottom:16}}>Proiectie lunara — Trafic &amp; Venit</div><div style={{position:"relative"}}><svg viewBox={`0 0 ${svgW} ${H}`} style={{width:"100%",height:H}} onMouseLeave={()=>setChartTip(null)} onMouseMove={e=>{const r=e.currentTarget.getBoundingClientRect();const mx=(e.clientX-r.left)/r.width*svgW;const near=tPtsInv.reduce((a,b)=>Math.abs(b.x-mx)<Math.abs(a.x-mx)?b:a);setChartTip({x:near.x,m:months[near.month-1]});}}>{[0,0.5,1].map((f,i)=><line key={i} x1={pad.l} y1={pad.t+f*(H-pad.t-pad.b)} x2={svgW-pad.r} y2={pad.t+f*(H-pad.t-pad.b)} stroke={C.grayMid} strokeWidth="1" strokeDasharray="4,3"/>)}{tPtsInv.map((p,i)=><text key={i} x={p.x} y={H-4} fontSize="9" fill={C.grayText} textAnchor="middle">M{p.month}</text>)}<polyline points={toLine(tPtsInv)} fill="none" stroke={C.navy} strokeWidth="2.5" strokeLinejoin="round"/><polyline points={toLine(rPtsInv)} fill="none" stroke={C.orange} strokeWidth="2.5" strokeLinejoin="round" strokeDasharray="6,3"/>{chartTip&&<line x1={chartTip.x} y1={pad.t} x2={chartTip.x} y2={H-pad.b} stroke={C.grayMid} strokeWidth="1" strokeDasharray="3,2"/>}</svg>{chartTip&&<div style={{position:"absolute",top:8,left:chartTip.x/svgW*100>65?"auto":`calc(${chartTip.x/svgW*100}% + 10px)`,right:chartTip.x/svgW*100>65?`calc(${(1-chartTip.x/svgW)*100}% + 10px)`:"auto",background:C.navy,color:C.white,fontSize:11,padding:"8px 12px",borderRadius:8,pointerEvents:"none",lineHeight:1.9}}><div style={{fontWeight:600,marginBottom:2}}>Luna {chartTip.m.month}</div><div><span style={{color:"#aac4ff"}}>Trafic:</span> <strong>{fmtN(chartTip.m.traffic)}</strong></div><div><span style={{color:"#ffb899"}}>Venit:</span> <strong>{fmtRON(chartTip.m.revenue)}</strong></div><div><span style={{color:chartTip.m.roi>=0?"#86efac":"#fca5a5"}}>ROI:</span> <strong>{chartTip.m.roi}%</strong></div></div>}</div><div style={{display:"flex",gap:16,marginTop:8}}><div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.grayText}}><div style={{width:20,height:2.5,background:C.navy,borderRadius:2}}/>Trafic organic</div><div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.grayText}}><svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke={C.orange} strokeWidth="2.5" strokeDasharray="5,3"/></svg>Venit estimat</div></div></div><div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",marginBottom:20}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{background:C.gray,borderBottom:`1px solid ${C.border}`}}>{["Luna","Trafic","Conversii","Venit (RON)","Cost SEO","ROI"].map(h=><th key={h} style={{padding:"11px 16px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</th>)}</tr></thead><tbody>{months.map((m,i)=><tr key={i} style={{borderBottom:`1px solid ${C.grayMid}`}} onMouseEnter={e=>e.currentTarget.style.background=C.gray} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"11px 16px",fontWeight:600,color:C.navy}}>Luna {m.month}</td><td style={{padding:"11px 16px",color:C.grayDark}}>{fmtN(m.traffic)}</td><td style={{padding:"11px 16px",color:C.grayDark}}>{fmtN(m.conversions)}</td><td style={{padding:"11px 16px",fontWeight:600,color:C.orange}}>{fmtRON(m.revenue)}</td><td style={{padding:"11px 16px",color:C.grayDark}}>{fmtRON(m.cost)}</td><td style={{padding:"11px 16px"}}><span style={{fontWeight:700,fontSize:13,color:m.roi>=0?C.green:C.red,background:m.roi>=0?C.greenLight:C.redLight,padding:"3px 10px",borderRadius:8}}>{m.roi>=0?"+":""}{m.roi}%</span></td></tr>)}</tbody></table></div><div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",marginBottom:12}}><div style={{padding:"14px 16px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontWeight:600,fontSize:14}}>Keywords în forecast ({calcedKws.length})</span>{source==="manual"&&<span style={{fontSize:12,color:C.grayText}}>Modifica pozitia tinta direct in tabel</span>}</div><table style={{width:"100%",borderCollapse:"collapse",minWidth:600}}><thead><tr style={{background:C.gray,borderBottom:`1px solid ${C.border}`}}>{["Keyword","Volum","Poz. curenta","CTR curent","Poz. tinta","CTR tinta","Trafic câștigat"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}{source==="manual"&&<th style={{width:36}}/>}</tr></thead><tbody>{calcedKws.map((kw,i)=><tr key={kw.id||i} style={{borderBottom:`1px solid ${C.grayMid}`}} onMouseEnter={e=>e.currentTarget.style.background=C.gray} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"11px 14px",fontWeight:500,fontSize:13,color:C.navy}}>{kw.keyword}</td><td style={{padding:"11px 14px",fontSize:13,color:C.grayDark}}>{fmtN(kw.volume)}</td><td style={{padding:"11px 14px"}}><PositionBadge pos={kw.currentPos}/></td><td style={{padding:"11px 14px",fontSize:13,color:C.grayText}}>{(kw.curCTR*100).toFixed(1)}%</td><td style={{padding:"11px 14px"}}>{source==="manual"?<input type="number" min="1" max="100" value={kw.targetPos} onChange={e=>updateTargetPos(kw.id,e.target.value)} style={{width:56,padding:"4px 8px",border:`1.5px solid ${C.border}`,borderRadius:6,fontSize:13,fontWeight:700,color:C.green,outline:"none",textAlign:"center"}} onFocus={e=>e.target.style.borderColor=C.green} onBlur={e=>e.target.style.borderColor=C.border}/>:<PositionBadge pos={kw.targetPos}/>}</td><td style={{padding:"11px 14px",fontSize:13,color:C.green,fontWeight:600}}>{(kw.tgtCTR*100).toFixed(1)}%</td><td style={{padding:"11px 14px"}}><span style={{fontWeight:700,fontSize:13,color:kw.trafficGain>=0?C.green:C.red}}>{kw.trafficGain>=0?"+":""}{fmtN(kw.trafficGain)}</span></td>{source==="manual"&&<td style={{padding:"11px 14px"}}><button onClick={()=>removeKw(kw.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#fca5a5",padding:4}}>×</button></td>}</tr>)}</tbody></table></div>{source==="manual"&&<div style={{background:C.gray,border:`1.5px solid ${C.border}`,borderRadius:10,padding:14,display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>{[["Keyword","text","keyword"],["Volum lunar","number","volume"],["Poz. curenta","number","currentPos"],["Poz. tinta","number","targetPos"]].map(([label,type,field])=><div key={field} style={{flex:field==="keyword"?2:1,minWidth:100}}><label style={{fontSize:11,fontWeight:500,color:C.grayDark,display:"block",marginBottom:4}}>{label}</label><input type={type} value={newKw[field]} onChange={e=>setNewKw(prev=>({...prev,[field]:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&addManualKw()} placeholder={field==="keyword"?"Ex: pantofi sport":""} style={{width:"100%",padding:"8px 10px",border:`1.5px solid ${C.border}`,borderRadius:7,fontSize:13,outline:"none",boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></div>)}<button onClick={addManualKw} style={{padding:"8px 18px",background:C.orange,color:C.white,border:"none",borderRadius:8,fontWeight:600,fontSize:13,cursor:"pointer"}}>+ Adauga</button></div>}<p style={{marginTop:12,fontSize:11,color:C.grayText,textAlign:"center"}}>* Estimari bazate pe CTR mediu per pozitie Google. Date simulate.</p></div>);}
+function Forecasting() {
+  const [convRate, setConvRate] = useState(2);
+  const [avgOrder, setAvgOrder] = useState(250);
+  const [monthlyCost, setMonthlyCost] = useState(2000);
+  const [horizon, setHorizon] = useState(12);
+  const [scenario, setScenario] = useState("realistic");
+  const [customPos, setCustomPos] = useState(10);
+  const forecastRef = useRef(null);
+  const [showCrawlModal, setShowCrawlModal] = useState(false);
+  const [crawlUrl, setCrawlUrl] = useState('');
+  const [crawlLoading, setCrawlLoading] = useState(false);
+  const [crawlResults, setCrawlResults] = useState(null);
+  const [crawlError, setCrawlError] = useState('');
+  const [selectedCrawlKws, setSelectedCrawlKws] = useState(new Set());
+  const [siteUrl, setSiteUrl] = useState("");
+  const [keywords, setKeywords] = useState([]);
+  const [kwInput, setKwInput] = useState("");
+  const [chartTip, setChartTip] = useState(null);
+
+  const SCEN_TARGET = { optimistic: 2, realistic: 5, pessimistic: 15, custom: customPos };
+  const SEO_CURVE = [0.05, 0.10, 0.18, 0.30, 0.45, 0.60, 0.72, 0.80, 0.86, 0.91, 0.95, 1.00];
+  const SCEN_COLOR  = { optimistic: C.green, realistic: C.navy, pessimistic: C.grayText, custom: C.orange };
+  const SCEN_LABEL  = { optimistic: "Optimist", realistic: "Realist", pessimistic: "Pesimist", custom: "Custom" };
+
+  const targetPos = SCEN_TARGET[scenario];
+
+  const addKeyword = async () => {
+    const kw = kwInput.trim();
+    if (!kw) return;
+    setKwInput("");
+    const id = Date.now();
+    setKeywords(prev => [...prev, { id, keyword: kw, volume: 0, currentPos: 50, loading: true }]);
+    const [volRes, rankRes] = await Promise.allSettled([
+      fetch('/api/keywords', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keywords: [kw] }) }).then(r => r.json()),
+      fetch('/api/rankings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: kw, url: siteUrl }) }).then(r => r.json()),
+    ]);
+    const volume     = volRes.status  === 'fulfilled' ? (volRes.value?.tasks?.[0]?.result?.[0]?.search_volume || 0) : 0;
+    const currentPos = rankRes.status === 'fulfilled' ? (rankRes.value?.position || 50) : 50;
+    setKeywords(prev => prev.map(k => k.id === id ? { ...k, volume, currentPos, loading: false } : k));
+  };
+
+  const removeKeyword = id => setKeywords(prev => prev.filter(k => k.id !== id));
+
+  const runCrawl = async () => {
+    if (!crawlUrl.trim()) return;
+    setCrawlLoading(true);
+    setCrawlError('');
+    setCrawlResults(null);
+    setSelectedCrawlKws(new Set());
+    try {
+      const res = await fetch('/api/crawl', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: crawlUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setCrawlError(data.error || 'Eroare la crawl'); }
+      else { setCrawlResults(data); }
+    } catch {
+      setCrawlError('Eroare de rețea. Încearcă din nou.');
+    } finally {
+      setCrawlLoading(false);
+    }
+  };
+
+  const importCrawlKws = async () => {
+    const toImport = crawlResults?.keywords?.filter(k => selectedCrawlKws.has(k)) || [];
+    setShowCrawlModal(false);
+    setCrawlResults(null);
+    setCrawlUrl('');
+    setSelectedCrawlKws(new Set());
+    for (const kw of toImport) {
+      const id = Date.now() + Math.random();
+      setKeywords(prev => [...prev, { id, keyword: kw, volume: 0, currentPos: 50, loading: true }]);
+      const [volRes, rankRes] = await Promise.allSettled([
+        fetch('/api/keywords', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keywords: [kw] }) }).then(r => r.json()),
+        fetch('/api/rankings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: kw, url: siteUrl }) }).then(r => r.json()),
+      ]);
+      const volume     = volRes.status  === 'fulfilled' ? (volRes.value?.tasks?.[0]?.result?.[0]?.search_volume || 0) : 0;
+      const currentPos = rankRes.status === 'fulfilled' ? (rankRes.value?.position || 50) : 50;
+      setKeywords(prev => prev.map(k => k.id === id ? { ...k, volume, currentPos, loading: false } : k));
+    }
+  };
+
+  const printForecast = () => {
+    const content = forecastRef.current?.innerHTML;
+    if (!content) return;
+    const w = window.open('', '_blank', 'width=1000,height=800');
+    w.document.write(`<!DOCTYPE html><html lang="ro"><head>
+      <meta charset="UTF-8"/>
+      <title>SEO Forecast — ${SCEN_LABEL[scenario]}</title>
+      <style>
+        *{box-sizing:border-box;margin:0;padding:0;}
+        body{font-family:Inter,'Segoe UI',Arial,sans-serif;color:#1A2B4A;padding:32px;font-size:13px;line-height:1.5;background:#fff;}
+        h1{font-size:22px;font-weight:700;margin-bottom:4px;}
+        h2{font-size:15px;font-weight:700;margin:20px 0 10px;}
+        table{width:100%;border-collapse:collapse;margin-bottom:4px;font-size:12px;}
+        th{background:#F5F6F8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;font-size:10px;padding:8px 12px;text-align:left;border-bottom:2px solid #E2E5EA;}
+        td{padding:8px 12px;border-bottom:1px solid #E8EAED;vertical-align:middle;}
+        tr:last-child td{border-bottom:none;}
+        svg{max-width:100%;height:auto;}
+        button{display:none!important;}
+        input[type=number]{border:none;background:transparent;font-weight:700;font-size:13px;color:#1A2B4A;}
+        select{border:none;background:transparent;font-size:13px;color:#1A2B4A;}
+        .no-print{display:none!important;}
+        @page{margin:1.5cm;size:A4;}
+        @media print{body{padding:0;}}
+      </style>
+    </head><body>${content}</body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { w.print(); w.close(); }, 600);
+  };
+
+  const calcKw = kw => {
+    const curCTR = getCTR(kw.currentPos);
+    const tgtCTR = getCTR(targetPos);
+    const curTraffic = Math.round((kw.volume || 0) * curCTR);
+    const tgtTraffic = Math.round((kw.volume || 0) * tgtCTR);
+    return { ...kw, targetPos, curCTR, tgtCTR, curTraffic, tgtTraffic, trafficGain: tgtTraffic - curTraffic };
+  };
+
+  const calcedKws = keywords.filter(k => !k.loading).map(calcKw);
+  const totalCurTraffic = calcedKws.reduce((s, k) => s + k.curTraffic, 0);
+  const totalTgtTraffic = calcedKws.reduce((s, k) => s + k.tgtTraffic, 0);
+  const totalGain = totalTgtTraffic - totalCurTraffic;
+  const months = Array.from({ length: horizon }, (_, i) => {
+    const progress = i < SEO_CURVE.length ? SEO_CURVE[i] : 1.0;
+    const traffic = Math.round(totalCurTraffic + totalGain * progress);
+    const conversions = traffic * (convRate / 100);
+    const revenue = conversions * avgOrder;
+    return { month: i + 1, traffic, conversions: Math.round(conversions), revenue: Math.round(revenue), cost: monthlyCost, roi: monthlyCost > 0 ? Math.round((revenue - monthlyCost) / monthlyCost * 100) : 0 };
+  });
+
+  const finalMonth = months[months.length - 1];
+  const totalRevenue = months.reduce((s, m) => s + m.revenue, 0);
+  const totalCost = months.reduce((s, m) => s + m.cost, 0);
+  const overallROI = totalCost > 0 ? Math.round((totalRevenue - totalCost) / totalCost * 100) : 0;
+
+  const svgW = 560, H = 130, pad = { t: 12, r: 16, b: 28, l: 44 };
+  const maxTraffic = Math.max(...months.map(m => m.traffic), 1);
+  const maxRev     = Math.max(...months.map(m => m.revenue), 1);
+  const invY = (y, H, pad) => pad.t + (H - pad.t - pad.b) - (y - pad.t);
+  const tPts = months.map((m, i) => ({ x: pad.l + (i / Math.max(months.length - 1, 1)) * (svgW - pad.l - pad.r), y: invY(pad.t + (m.traffic / maxTraffic) * (H - pad.t - pad.b), H, pad), month: m.month }));
+  const rPts = months.map((m, i) => ({ x: pad.l + (i / Math.max(months.length - 1, 1)) * (svgW - pad.l - pad.r), y: invY(pad.t + (m.revenue / maxRev) * (H - pad.t - pad.b), H, pad), month: m.month }));
+  const toLine = pts => pts.map(p => `${p.x},${p.y}`).join(" ");
+
+  return (
+    <div ref={forecastRef}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700 }}>SEO Forecasting</h1>
+        <button onClick={printForecast} className="no-print" style={{ padding: "9px 18px", background: C.navy, color: C.white, border: "none", borderRadius: 9, fontWeight: 600, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+          📄 Descarcă PDF
+        </button>
+      </div>
+      <p style={{ color: C.grayText, fontSize: 14, marginBottom: 24 }}>Estimează trafic, conversii, venit și ROI pe baza obiectivelor de poziționare.</p>
+
+      {/* Parametri financiari */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
+        {[{ label: "Rată conversie (%)", val: convRate, set: setConvRate, min: 0.1, max: 20, step: 0.1 }, { label: "Valoare medie comandă (RON)", val: avgOrder, set: setAvgOrder, min: 1, max: 10000, step: 10 }, { label: "Cost lunar SEO (RON)", val: monthlyCost, set: setMonthlyCost, min: 0, max: 50000, step: 100 }, { label: "Orizont (luni)", val: horizon, set: setHorizon, min: 1, max: 24, step: 1 }].map((f, i) => (
+          <div key={i} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
+            <label style={{ fontSize: 11, color: C.grayText, fontWeight: 500, display: "block", marginBottom: 6 }}>{f.label}</label>
+            <input type="number" value={f.val} min={f.min} max={f.max} step={f.step} onChange={e => f.set(parseFloat(e.target.value) || 0)} style={{ width: "100%", fontSize: 16, fontWeight: 700, color: C.navy, border: "none", outline: "none", background: "transparent", boxSizing: "border-box" }} />
+          </div>
+        ))}
+      </div>
+
+      {/* Scenariu + URL site */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          {["optimistic", "realistic", "pessimistic", "custom"].map(s => (
+            <button key={s} onClick={() => setScenario(s)} style={{ padding: "7px 16px", borderRadius: 8, border: "1.5px solid", fontSize: 13, cursor: "pointer", fontWeight: 600, borderColor: scenario === s ? SCEN_COLOR[s] : C.border, background: scenario === s ? SCEN_COLOR[s] : C.white, color: scenario === s ? C.white : C.grayText }}>
+              {SCEN_LABEL[s]}{s !== "custom" && <span style={{ fontSize: 11, opacity: 0.85 }}> (poz. {SCEN_TARGET[s]})</span>}
+            </button>
+          ))}
+          {scenario === "custom" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 12, color: C.grayText }}>Poziție țintă:</span>
+              <input
+                type="number" min={1} max={100} value={customPos}
+                onChange={e => setCustomPos(Math.min(100, Math.max(1, parseInt(e.target.value) || 1)))}
+                style={{ width: 64, padding: "6px 8px", border: `1.5px solid ${C.orange}`, borderRadius: 7, fontSize: 14, fontWeight: 700, color: C.orange, outline: "none", textAlign: "center" }}
+              />
+              <span style={{ fontSize: 12, color: C.grayText }}>(1–100)</span>
+            </div>
+          )}
+        </div>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <input value={siteUrl} onChange={e => setSiteUrl(e.target.value)} placeholder="URL site (ex: https://site.ro) — pentru poziții reale" style={{ width: "100%", padding: "8px 12px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, outline: "none", boxSizing: "border-box", color: C.navy }} onFocus={e => e.target.style.borderColor = C.orange} onBlur={e => e.target.style.borderColor = C.border} />
+        </div>
+      </div>
+
+      {/* 1. Carduri sumar */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
+        {[
+          { label: "Trafic curent / lună",        value: fmtN(totalCurTraffic), sub: "vizitatori organici",              color: C.grayText, bg: C.gray },
+          { label: "Trafic estimat / lună",        value: fmtN(totalTgtTraffic), sub: `+${fmtN(totalGain)} vizitatori`,  color: C.navy,    bg: "#EEF1F8" },
+          { label: `Venit estimat (luna ${horizon})`, value: fmtRON(finalMonth.revenue), sub: `${finalMonth.conversions} conversii`, color: C.orange, bg: C.orangeLight },
+          { label: `ROI total (${horizon} luni)`,  value: `${overallROI}%`, sub: overallROI > 0 ? "Profitabil ✓" : "Sub break-even", color: overallROI > 0 ? C.green : C.red, bg: overallROI > 0 ? C.greenLight : C.redLight },
+        ].map((s, i) => (
+          <div key={i} style={{ background: s.bg, borderRadius: 10, padding: "14px 16px" }}>
+            <div style={{ fontSize: 11, color: C.grayText, fontWeight: 500, marginBottom: 4 }}>{s.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: s.color, marginBottom: 2 }}>{s.value}</div>
+            <div style={{ fontSize: 11, color: C.grayText }}>{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 2. Grafic proiecție */}
+      <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 16 }}>Proiecție lunară — Trafic &amp; Venit</div>
+        <div style={{ position: "relative" }}>
+          <svg viewBox={`0 0 ${svgW} ${H}`} style={{ width: "100%", height: H }} onMouseLeave={() => setChartTip(null)} onMouseMove={e => { const r = e.currentTarget.getBoundingClientRect(); const mx = (e.clientX - r.left) / r.width * svgW; const near = tPts.reduce((a, b) => Math.abs(b.x - mx) < Math.abs(a.x - mx) ? b : a); setChartTip({ x: near.x, m: months[near.month - 1] }); }}>
+            {[0, 0.5, 1].map((f, i) => <line key={i} x1={pad.l} y1={pad.t + f * (H - pad.t - pad.b)} x2={svgW - pad.r} y2={pad.t + f * (H - pad.t - pad.b)} stroke={C.grayMid} strokeWidth="1" strokeDasharray="4,3" />)}
+            {tPts.map((p, i) => <text key={i} x={p.x} y={H - 4} fontSize="9" fill={C.grayText} textAnchor="middle">M{p.month}</text>)}
+            <polyline points={toLine(tPts)} fill="none" stroke={C.navy} strokeWidth="2.5" strokeLinejoin="round" />
+            <polyline points={toLine(rPts)} fill="none" stroke={C.orange} strokeWidth="2.5" strokeLinejoin="round" strokeDasharray="6,3" />
+            {chartTip && <line x1={chartTip.x} y1={pad.t} x2={chartTip.x} y2={H - pad.b} stroke={C.grayMid} strokeWidth="1" strokeDasharray="3,2" />}
+          </svg>
+          {chartTip && <div style={{ position: "absolute", top: 8, left: chartTip.x / svgW * 100 > 65 ? "auto" : `calc(${chartTip.x / svgW * 100}% + 10px)`, right: chartTip.x / svgW * 100 > 65 ? `calc(${(1 - chartTip.x / svgW) * 100}% + 10px)` : "auto", background: C.navy, color: C.white, fontSize: 11, padding: "8px 12px", borderRadius: 8, pointerEvents: "none", lineHeight: 1.9 }}>
+            <div style={{ fontWeight: 600, marginBottom: 2 }}>Luna {chartTip.m.month}</div>
+            <div><span style={{ color: "#aac4ff" }}>Trafic:</span> <strong>{fmtN(chartTip.m.traffic)}</strong></div>
+            <div><span style={{ color: "#ffb899" }}>Venit:</span> <strong>{fmtRON(chartTip.m.revenue)}</strong></div>
+            <div><span style={{ color: chartTip.m.roi >= 0 ? "#86efac" : "#fca5a5" }}>ROI:</span> <strong>{chartTip.m.roi}%</strong></div>
+          </div>}
+        </div>
+        <div style={{ display: "flex", gap: 16, marginTop: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: C.grayText }}><div style={{ width: 20, height: 2.5, background: C.navy, borderRadius: 2 }} />Trafic organic</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: C.grayText }}><svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke={C.orange} strokeWidth="2.5" strokeDasharray="5,3" /></svg>Venit estimat</div>
+        </div>
+      </div>
+
+      {/* 3. Formular adăugare keyword */}
+      <div className="no-print" style={{ background: C.gray, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: 14, display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 20 }}>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 11, fontWeight: 500, color: C.grayDark, display: "block", marginBottom: 4 }}>Keyword</label>
+          <input value={kwInput} onChange={e => setKwInput(e.target.value)} onKeyDown={e => e.key === "Enter" && addKeyword()} placeholder="Ex: pantofi sport ieftini" style={{ width: "100%", padding: "8px 10px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, outline: "none", boxSizing: "border-box" }} onFocus={e => e.target.style.borderColor = C.orange} onBlur={e => e.target.style.borderColor = C.border} />
+        </div>
+        <button onClick={addKeyword} style={{ padding: "8px 22px", background: C.orange, color: C.white, border: "none", borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>+ Adaugă</button>
+        <button onClick={() => { setShowCrawlModal(true); setCrawlResults(null); setCrawlError(''); }} style={{ padding: "8px 18px", background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", color: C.navy }}>🌐 Importă din site</button>
+        <span style={{ fontSize: 11, color: C.grayText, alignSelf: "center" }}>Volum și poziție se încarcă automat</span>
+      </div>
+
+      {/* Modal crawl */}
+      {showCrawlModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}>
+          <div style={{ background: C.white, borderRadius: 16, padding: 28, width: 560, maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.2)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <h2 style={{ fontSize: 17, fontWeight: 700, color: C.navy }}>🌐 Importă keywords din site</h2>
+              <button onClick={() => setShowCrawlModal(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: C.grayText, lineHeight: 1 }}>×</button>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <input value={crawlUrl} onChange={e => setCrawlUrl(e.target.value)} onKeyDown={e => e.key === "Enter" && runCrawl()} placeholder="https://site-ul-tau.ro" style={{ flex: 1, padding: "9px 12px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, outline: "none" }} onFocus={e => e.target.style.borderColor = C.orange} onBlur={e => e.target.style.borderColor = C.border} />
+              <button onClick={runCrawl} disabled={crawlLoading} style={{ padding: "9px 20px", background: crawlLoading ? C.grayMid : C.navy, color: C.white, border: "none", borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: crawlLoading ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+                {crawlLoading ? "Se analizează..." : "Analizează"}
+              </button>
+            </div>
+
+            {crawlError && <div style={{ padding: "10px 14px", background: C.redLight, border: `1px solid #fca5a5`, borderRadius: 8, fontSize: 13, color: C.red, marginBottom: 12 }}>⚠️ {crawlError}</div>}
+
+            {crawlResults && (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                  <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 12, fontWeight: 600, background: crawlResults.siteType === "ecommerce" ? C.orangeLight : "#EEF1F8", color: crawlResults.siteType === "ecommerce" ? C.orange : C.navy }}>
+                    {crawlResults.siteType === "ecommerce" ? "🛒 E-commerce" : "💼 Site servicii"}
+                  </span>
+                  <span style={{ fontSize: 12, color: C.grayText }}>{crawlResults.keywords.length} keywords detectate</span>
+                  <button onClick={() => setSelectedCrawlKws(new Set(crawlResults.keywords))} style={{ marginLeft: "auto", fontSize: 12, color: C.orange, background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>Selectează tot</button>
+                  <button onClick={() => setSelectedCrawlKws(new Set())} style={{ fontSize: 12, color: C.grayText, background: "none", border: "none", cursor: "pointer" }}>Deselectează</button>
+                </div>
+
+                <div style={{ flex: 1, overflowY: "auto", border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 16 }}>
+                  {crawlResults.keywords.map(kw => (
+                    <label key={kw} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: `1px solid ${C.grayMid}`, cursor: "pointer", background: selectedCrawlKws.has(kw) ? C.orangeLight : "transparent" }}>
+                      <input type="checkbox" checked={selectedCrawlKws.has(kw)} onChange={() => {
+                        const s = new Set(selectedCrawlKws);
+                        s.has(kw) ? s.delete(kw) : s.add(kw);
+                        setSelectedCrawlKws(s);
+                      }} />
+                      <span style={{ fontSize: 13, color: C.navy }}>{kw}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <button onClick={importCrawlKws} disabled={selectedCrawlKws.size === 0} style={{ width: "100%", padding: "11px", background: selectedCrawlKws.size === 0 ? C.grayMid : C.orange, color: C.white, border: "none", borderRadius: 9, fontWeight: 700, fontSize: 14, cursor: selectedCrawlKws.size === 0 ? "not-allowed" : "pointer" }}>
+                  Importă {selectedCrawlKws.size > 0 ? `${selectedCrawlKws.size} keywords selectate` : "keywords selectate"}
+                </button>
+              </>
+            )}
+
+            {!crawlResults && !crawlLoading && !crawlError && (
+              <p style={{ fontSize: 13, color: C.grayText, textAlign: "center", padding: "20px 0" }}>Introdu URL-ul site-ului și apasă Analizează pentru a detecta automat keywords din titluri, headings și navigație.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 4. Tabel keywords */}
+      <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 20 }}>
+        <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontWeight: 600, fontSize: 14 }}>Keywords în forecast ({keywords.length})</span>
+          <span style={{ fontSize: 12, color: C.grayText }}>Poziție țintă scenariul <strong style={{ color: SCEN_COLOR[scenario] }}>{SCEN_LABEL[scenario]}</strong>: <strong>#{targetPos}</strong></span>
+        </div>
+        {keywords.length === 0
+          ? <div style={{ padding: "32px", textAlign: "center", color: C.grayText, fontSize: 14 }}>Adaugă keywords mai jos pentru a vedea proiecția</div>
+          : <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 600 }}>
+              <thead><tr style={{ background: C.gray, borderBottom: `1px solid ${C.border}` }}>{["Keyword", "Volum", "Poz. curentă", "CTR curent", "Poz. țintă", "CTR țintă", "Trafic câștigat", ""].map(h => <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 600, color: C.grayText, textTransform: "uppercase", letterSpacing: "0.04em" }}>{h}</th>)}</tr></thead>
+              <tbody>{keywords.map(kw => {
+                const c = kw.loading ? null : calcKw(kw);
+                return (
+                  <tr key={kw.id} style={{ borderBottom: `1px solid ${C.grayMid}` }} onMouseEnter={e => e.currentTarget.style.background = C.gray} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <td style={{ padding: "11px 14px", fontWeight: 500, fontSize: 13, color: C.navy }}>{kw.keyword}</td>
+                    <td style={{ padding: "11px 14px", fontSize: 13, color: C.grayDark }}>{kw.loading ? <span style={{ color: C.grayText, fontSize: 11, fontStyle: "italic" }}>Se încarcă...</span> : fmtN(kw.volume)}</td>
+                    <td style={{ padding: "11px 14px" }}>{kw.loading ? <span style={{ color: C.grayText, fontSize: 11, fontStyle: "italic" }}>Se încarcă...</span> : <PositionBadge pos={kw.currentPos} />}</td>
+                    <td style={{ padding: "11px 14px", fontSize: 13, color: C.grayText }}>{kw.loading ? "…" : (getCTR(kw.currentPos) * 100).toFixed(1) + "%"}</td>
+                    <td style={{ padding: "11px 14px" }}><PositionBadge pos={targetPos} /></td>
+                    <td style={{ padding: "11px 14px", fontSize: 13, color: C.green, fontWeight: 600 }}>{kw.loading ? "…" : (getCTR(targetPos) * 100).toFixed(1) + "%"}</td>
+                    <td style={{ padding: "11px 14px" }}>{kw.loading ? <span style={{ color: C.grayText, fontSize: 11, fontStyle: "italic" }}>Se încarcă...</span> : <span style={{ fontWeight: 700, fontSize: 13, color: c.trafficGain >= 0 ? C.green : C.red }}>{c.trafficGain >= 0 ? "+" : ""}{fmtN(c.trafficGain)}</span>}</td>
+                    <td style={{ padding: "11px 14px" }}><button onClick={() => removeKeyword(kw.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "#fca5a5", padding: 4 }}>×</button></td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+        }
+      </div>
+
+      {/* 5. Tabel lunar */}
+      <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 20 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr style={{ background: C.gray, borderBottom: `1px solid ${C.border}` }}>{["Luna", "Trafic", "Conversii", "Venit (RON)", "ROI"].map(h => <th key={h} style={{ padding: "11px 16px", textAlign: "left", fontSize: 11, fontWeight: 600, color: C.grayText, textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>)}</tr></thead>
+          <tbody>{months.map((m, i) => <tr key={i} style={{ borderBottom: `1px solid ${C.grayMid}` }} onMouseEnter={e => e.currentTarget.style.background = C.gray} onMouseLeave={e => e.currentTarget.style.background = "transparent"}><td style={{ padding: "11px 16px", fontWeight: 600, color: C.navy }}>Luna {m.month}</td><td style={{ padding: "11px 16px", color: C.grayDark }}>{fmtN(m.traffic)}</td><td style={{ padding: "11px 16px", color: C.grayDark }}>{fmtN(m.conversions)}</td><td style={{ padding: "11px 16px", fontWeight: 600, color: C.orange }}>{fmtRON(m.revenue)}</td><td style={{ padding: "11px 16px" }}><span style={{ fontWeight: 700, fontSize: 13, color: m.roi >= 0 ? C.green : C.red, background: m.roi >= 0 ? C.greenLight : C.redLight, padding: "3px 10px", borderRadius: 8 }}>{m.roi >= 0 ? "+" : ""}{m.roi}%</span></td></tr>)}</tbody>
+        </table>
+      </div>
+
+      <p style={{ marginTop: 12, fontSize: 11, color: C.grayText, textAlign: "center" }}>* Estimări bazate pe CTR mediu per poziție Google.</p>
+    </div>
+  );
+}
+
+// ── Raport SEO ────────────────────────────────────────────────────────────────
+const MONTHS_FULL = ["Ianuarie","Februarie","Martie","Aprilie","Mai","Iunie","Iulie","August","Septembrie","Octombrie","Noiembrie","Decembrie"];
+
+const DEFAULT_SECTIONS = [
+  { id:"summary",   label:"Sumar executiv",            icon:"📋", enabled:true,  order:0 },
+  { id:"positions", label:"Pozitii & Volume keywords", icon:"📍", enabled:true,  order:1 },
+  { id:"evolution", label:"Evolutie pozitii",          icon:"📈", enabled:true,  order:2 },
+  { id:"topmovers", label:"Top movers",                icon:"🏆", enabled:true,  order:3 },
+  { id:"notes",     label:"Note & recomandari",        icon:"📝", enabled:false, order:4 },
+];
+
+function ReportPreview({ config, project, p1Label, p2Label }) {
+  if (!project) return null;
+  const kws = project.keywords || [];
+  const posNow = kws.map(k=>k.position);
+  const avgNow = posNow.length ? Math.round(posNow.reduce((a,b)=>a+b,0)/posNow.length) : 0;
+  const top3Now = posNow.filter(p=>p<=3).length;
+  const top10Now = posNow.filter(p=>p<=10).length;
+  const posPrev = posNow.map(p=>Math.min(100,p+Math.floor(Math.random()*8)+2));
+  const avgPrev = posPrev.length ? Math.round(posPrev.reduce((a,b)=>a+b,0)/posPrev.length) : 0;
+  const top3Prev = posPrev.filter(p=>p<=3).length;
+  const top10Prev = posPrev.filter(p=>p<=10).length;
+  const diffAvg = avgPrev - avgNow;
+  const movers = kws.map((k,i)=>({...k,prevPos:posPrev[i],delta:posPrev[i]-k.position})).sort((a,b)=>b.delta-a.delta);
+  const improved = movers.filter(m=>m.delta>0).slice(0,5);
+  const declined = movers.filter(m=>m.delta<0).sort((a,b)=>a.delta-b.delta).slice(0,5);
+  const sections = [...config.sections].sort((a,b)=>a.order-b.order).filter(s=>s.enabled);
+  const accentColor = config.accentColor || C.orange;
+
+  const DeltaBadge = ({delta}) => delta===0 ? <span style={{color:C.grayText,fontSize:12}}>—</span> :
+    <span style={{fontSize:12,fontWeight:700,color:delta>0?C.green:C.red}}>{delta>0?`▲ +${delta}`:`▼ ${delta}`}</span>;
+
+  const EvolutionMini = ({history}) => {
+    if(!history||history.length<2) return <span style={{color:C.grayText,fontSize:11}}>N/A</span>;
+    const last14 = history.slice(-14);
+    const W=80,H=28,pad=2;
+    const positions=last14.map(e=>e.position);
+    const maxP=Math.max(...positions),minP=Math.min(...positions);
+    const pts=last14.map((e,i)=>({x:pad+(i/Math.max(last14.length-1,1))*(W-pad*2),y:pad+((e.position-minP)/((maxP-minP)||1))*(H-pad*2)}));
+    return <svg width={W} height={H}><polyline points={pts.map(p=>`${p.x},${p.y}`).join(" ")} fill="none" stroke={accentColor} strokeWidth="2" strokeLinejoin="round"/></svg>;
+  };
+
+  return (
+    <div style={{background:C.white,borderRadius:14,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+      <div style={{background:config.darkHeader?C.navy:`linear-gradient(135deg, ${accentColor}18, ${accentColor}08)`,borderBottom:`3px solid ${accentColor}`,padding:"28px 32px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div>
+            {config.showLogo && <div style={{marginBottom:12}}><Logo variant={config.darkHeader?"dark":"light"} width={150}/></div>}
+            <h1 style={{fontSize:22,fontWeight:800,color:config.darkHeader?C.white:C.navy,margin:0,marginBottom:4}}>
+              Raport SEO {config.reportTitle?`— ${config.reportTitle}`:""}
+            </h1>
+            <div style={{fontSize:13,color:config.darkHeader?"rgba(255,255,255,0.6)":C.grayText}}>
+              {project.name} {project.url&&`· ${project.url}`}
+            </div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{display:"flex",gap:10}}>
+              {[{label:"Perioada curentă",val:p1Label,dark:config.darkHeader},{label:"Perioada anterioară",val:p2Label,dark:config.darkHeader}].map((p,i)=>(
+                <div key={i} style={{background:p.dark?"rgba(255,255,255,0.1)":C.white,borderRadius:10,padding:"10px 16px",textAlign:"center",minWidth:90}}>
+                  <div style={{fontSize:10,color:p.dark?"rgba(255,255,255,0.5)":C.grayText,fontWeight:500,marginBottom:3,textTransform:"uppercase",letterSpacing:"0.05em"}}>{p.label}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:p.dark?C.white:C.navy}}>{p.val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{padding:"24px 32px"}}>
+        {sections.map(sec => {
+          if (sec.id==="summary") return (
+            <div key="summary" style={{marginBottom:28}}>
+              <h2 style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{color:accentColor}}>📋</span> Sumar executiv
+              </h2>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
+                {[
+                  {label:"Pozitie medie",cur:`#${avgNow}`,prev:`#${avgPrev}`,delta:diffAvg,better:diffAvg>0},
+                  {label:"Keywords Top 3",cur:top3Now,prev:top3Prev,delta:top3Now-top3Prev,better:top3Now>=top3Prev},
+                  {label:"Keywords Top 10",cur:top10Now,prev:top10Prev,delta:top10Now-top10Prev,better:top10Now>=top10Prev},
+                ].map((s,i)=>(
+                  <div key={i} style={{background:C.gray,borderRadius:10,padding:"14px 16px"}}>
+                    <div style={{fontSize:11,color:C.grayText,fontWeight:500,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>{s.label}</div>
+                    <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between"}}>
+                      <div style={{fontSize:26,fontWeight:800,color:accentColor}}>{s.cur}</div>
+                      <div style={{textAlign:"right"}}>
+                        <div style={{fontSize:11,color:C.grayText}}>anterior: {s.prev}</div>
+                        <div style={{fontSize:12,fontWeight:700,color:s.better?C.green:C.red}}>{s.delta===0?"—":s.delta>0?`+${s.delta}`:s.delta}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {config.summaryText && (
+                <div style={{background:`${accentColor}0f`,border:`1px solid ${accentColor}30`,borderRadius:10,padding:"14px 16px",fontSize:13,color:C.grayDark,lineHeight:1.6}}>
+                  {config.summaryText}
+                </div>
+              )}
+            </div>
+          );
+
+          if (sec.id==="positions") return (
+            <div key="positions" style={{marginBottom:28}}>
+              <h2 style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{color:accentColor}}>📍</span> Pozitii & Volume keywords
+              </h2>
+              <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr style={{background:C.gray}}>
+                    {["Keyword","Poz. curentă","Poz. anterioară","Variatie","Volum lunar","Trafic estimat"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>{kws.slice(0,config.maxKeywords||999).map((kw,i)=>{
+                    const vol=kw.volume||Math.floor(Math.random()*8000+500);
+                    const traffic=Math.round(vol*getCTR(kw.position));
+                    const maxV=Math.max(...kws.map(k=>k.volume||500),1);
+                    return(
+                      <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
+                        <td style={{padding:"10px 14px",fontWeight:500,fontSize:13,color:C.navy}}>{kw.keyword}</td>
+                        <td style={{padding:"10px 14px"}}><PositionBadge pos={kw.position}/></td>
+                        <td style={{padding:"10px 14px"}}><PositionBadge pos={posPrev[i]}/></td>
+                        <td style={{padding:"10px 14px"}}><DeltaBadge delta={posPrev[i]-kw.position}/></td>
+                        <td style={{padding:"10px 14px"}}><VolumeBar volume={vol} max={maxV} color={accentColor}/></td>
+                        <td style={{padding:"10px 14px",fontSize:13,fontWeight:600,color:accentColor}}>{fmtN(traffic)} viz/lună</td>
+                      </tr>
+                    );
+                  })}</tbody>
+                </table>
+              </div>
+            </div>
+          );
+
+          if (sec.id==="evolution") return (
+            <div key="evolution" style={{marginBottom:28}}>
+              <h2 style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{color:accentColor}}>📈</span> Evolutie pozitii (14 zile)
+              </h2>
+              <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr style={{background:C.gray}}>
+                    {["Keyword","Trend","Min","Max","Curent"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>{kws.slice(0,config.maxKeywords||999).map((kw,i)=>{
+                    const hist=kw.history||[];
+                    const last=hist.slice(-14).map(h=>h.position);
+                    const mn=last.length?Math.min(...last):kw.position;
+                    const mx=last.length?Math.max(...last):kw.position;
+                    return(
+                      <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
+                        <td style={{padding:"10px 14px",fontWeight:500,fontSize:13,color:C.navy}}>{kw.keyword}</td>
+                        <td style={{padding:"10px 14px"}}><EvolutionMini history={kw.history}/></td>
+                        <td style={{padding:"10px 14px",fontSize:12,color:C.green,fontWeight:600}}>#{mn}</td>
+                        <td style={{padding:"10px 14px",fontSize:12,color:C.red,fontWeight:600}}>#{mx}</td>
+                        <td style={{padding:"10px 14px"}}><PositionBadge pos={kw.position}/></td>
+                      </tr>
+                    );
+                  })}</tbody>
+                </table>
+              </div>
+            </div>
+          );
+
+          if (sec.id==="topmovers") return (
+            <div key="topmovers" style={{marginBottom:28}}>
+              <h2 style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{color:accentColor}}>🏆</span> Top movers
+              </h2>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+                <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+                  <div style={{background:C.greenLight,padding:"10px 14px",fontWeight:600,fontSize:12,color:C.green}}>📈 Cele mai mari urcari</div>
+                  <table style={{width:"100%",borderCollapse:"collapse"}}>
+                    <tbody>{improved.length?improved.map((m,i)=>(
+                      <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
+                        <td style={{padding:"9px 14px",fontSize:12,fontWeight:500,color:C.navy}}>{m.keyword}</td>
+                        <td style={{padding:"9px 14px",textAlign:"right"}}><span style={{fontSize:12,fontWeight:700,color:C.green}}>▲ +{m.delta} poz.</span></td>
+                      </tr>
+                    )):<tr><td style={{padding:"12px 14px",fontSize:12,color:C.grayText}}>Nicio urcare semnificativa</td></tr>}</tbody>
+                  </table>
+                </div>
+                <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+                  <div style={{background:C.redLight,padding:"10px 14px",fontWeight:600,fontSize:12,color:C.red}}>📉 Cele mai mari scaderi</div>
+                  <table style={{width:"100%",borderCollapse:"collapse"}}>
+                    <tbody>{declined.length?declined.map((m,i)=>(
+                      <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
+                        <td style={{padding:"9px 14px",fontSize:12,fontWeight:500,color:C.navy}}>{m.keyword}</td>
+                        <td style={{padding:"9px 14px",textAlign:"right"}}><span style={{fontSize:12,fontWeight:700,color:C.red}}>▼ {m.delta} poz.</span></td>
+                      </tr>
+                    )):<tr><td style={{padding:"12px 14px",fontSize:12,color:C.grayText}}>Nicio scadere semnificativa</td></tr>}</tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          );
+
+          if (sec.id==="notes") return config.notesText ? (
+            <div key="notes" style={{marginBottom:28}}>
+              <h2 style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{color:accentColor}}>📝</span> Note & recomandari
+              </h2>
+              <div style={{background:`${accentColor}0a`,border:`1px solid ${accentColor}25`,borderRadius:10,padding:"16px 18px",fontSize:13,color:C.grayDark,lineHeight:1.7,whiteSpace:"pre-wrap"}}>
+                {config.notesText}
+              </div>
+            </div>
+          ) : null;
+
+          return null;
+        })}
+
+        <div style={{borderTop:`1px solid ${C.grayMid}`,paddingTop:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontSize:11,color:C.grayText}}>Generat de SEO Tool by AdSem · {new Date().toLocaleDateString("ro-RO")}</span>
+          <span style={{fontSize:11,color:C.grayText}}>* Date simulate</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RaportSEO({ projects }) {
+  const now = new Date();
+  const prevMonth = new Date(now.getFullYear(), now.getMonth()-1, 1);
+
+  const [step, setStep] = useState("config");
+  const [selectedProjId, setSelectedProjId] = useState(projects?.[0]?.id || null);
+  const [p1Month, setP1Month] = useState(now.getMonth());
+  const [p1Year, setP1Year] = useState(now.getFullYear());
+  const [p2Month, setP2Month] = useState(prevMonth.getMonth());
+  const [p2Year, setP2Year] = useState(prevMonth.getFullYear());
+  const [sections, setSections] = useState(DEFAULT_SECTIONS);
+  const [reportTitle, setReportTitle] = useState("");
+  const [summaryText, setSummaryText] = useState("");
+  const [notesText, setNotesText] = useState("");
+  const [maxKeywords, setMaxKeywords] = useState(20);
+  const [templates, setTemplates] = useState([]);
+  const [newTplName, setNewTplName] = useState("");
+  const [tplSaved, setTplSaved] = useState(false);
+  const [activeTplId, setActiveTplId] = useState(null);
+  const [mailTab, setMailTab] = useState("manual");
+  const [mailTo, setMailTo] = useState("");
+  const [mailSubject, setMailSubject] = useState("Raport SEO lunar");
+  const [mailMsg, setMailMsg] = useState("");
+  const [mailSending, setMailSending] = useState(false);
+  const [mailSent, setMailSent] = useState(false);
+  const [scheduleDay, setScheduleDay] = useState("1");
+  const [scheduleFreq, setScheduleFreq] = useState("monthly");
+  const [scheduleEmail, setScheduleEmail] = useState("");
+  const [scheduleSaved, setScheduleSaved] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const reportRef = useRef(null);
+
+  const project = projects?.find(p=>p.id===selectedProjId);
+  const p1Label = `${MONTHS_FULL[p1Month]} ${p1Year}`;
+  const p2Label = `${MONTHS_FULL[p2Month]} ${p2Year}`;
+  const config = { sections, reportTitle, summaryText, notesText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords };
+
+  const handleSaveTemplate = () => {
+    if(!newTplName.trim()) return;
+    const tpl = {
+      id: Date.now(),
+      name: newTplName.trim(),
+      savedAt: new Date().toLocaleDateString("ro-RO"),
+      sections: JSON.parse(JSON.stringify(sections)),
+      reportTitle, summaryText, notesText, maxKeywords,
+      scheduleFreq, scheduleDay, scheduleEmail, mailSubject,
+    };
+    setTemplates(prev=>[...prev, tpl]);
+    setActiveTplId(tpl.id);
+    setNewTplName("");
+    setTplSaved(true);
+    setTimeout(()=>setTplSaved(false), 2500);
+  };
+
+  const handleLoadTemplate = tpl => {
+    setSections(JSON.parse(JSON.stringify(tpl.sections)));
+    setReportTitle(tpl.reportTitle||"");
+    setSummaryText(tpl.summaryText||"");
+    setNotesText(tpl.notesText||"");
+    setMaxKeywords(tpl.maxKeywords||20);
+    setMailSubject(tpl.mailSubject||"Raport SEO lunar");
+    setScheduleFreq(tpl.scheduleFreq||"monthly");
+    setScheduleDay(tpl.scheduleDay||"1");
+    setScheduleEmail(tpl.scheduleEmail||"");
+    setActiveTplId(tpl.id);
+  };
+
+  const handleDeleteTemplate = id => {
+    setTemplates(prev=>prev.filter(t=>t.id!==id));
+    if(activeTplId===id) setActiveTplId(null);
+  };
+
+  const sortedSections = [...sections].sort((a,b)=>a.order-b.order);
+  const accentColor = C.orange;
+
+  const moveSection = (idx, dir) => {
+    const arr = [...sortedSections];
+    const target = idx + dir;
+    if (target < 0 || target >= arr.length) return;
+    const newOrder = arr.map(s=>s.order);
+    [newOrder[idx], newOrder[target]] = [newOrder[target], newOrder[idx]];
+    setSections(prev => prev.map(s => {
+      const fi = arr.findIndex(a=>a.id===s.id);
+      return fi>=0 ? {...s, order:newOrder[fi]} : s;
+    }));
+  };
+
+  const toggleSection = id => setSections(prev=>prev.map(s=>s.id===id?{...s,enabled:!s.enabled}:s));
+
+  const handlePDF = () => {
+    setPdfGenerating(true);
+    setTimeout(()=>{
+      const content = reportRef.current;
+      if(!content){setPdfGenerating(false);return;}
+      const w = window.open("","_blank");
+      w.document.write(`<html><head><title>Raport SEO - ${project?.name||""}</title>
+        <style>
+          body{font-family:Inter,sans-serif;margin:0;padding:20px;color:#1A2B4A;}
+          @media print{body{padding:0;}}
+          table{width:100%;border-collapse:collapse;}
+          th,td{padding:8px 12px;text-align:left;font-size:12px;}
+          thead tr{background:#F5F6F8;}
+        </style>
+      </head><body>${content.innerHTML}<script>window.onload=()=>{window.print();}<\/script></body></html>`);
+      w.document.close();
+      setPdfGenerating(false);
+    },400);
+  };
+
+  const handleSendMail = () => {
+    if(!mailTo) return;
+    setMailSending(true);
+    setTimeout(()=>{setMailSending(false);setMailSent(true);setTimeout(()=>setMailSent(false),3000);},1800);
+  };
+
+  const handleSaveSchedule = () => {
+    if(!scheduleEmail) return;
+    setScheduleSaved(true);
+    setTimeout(()=>setScheduleSaved(false),3000);
+  };
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
+        <div>
+          <h1 style={{fontSize:22,fontWeight:700,marginBottom:4}}>Raportare</h1>
+          <p style={{color:C.grayText,fontSize:14}}>Generează, customizează și trimite rapoarte SEO profesionale.</p>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          {["config","preview"].map(s=>(
+            <button key={s} onClick={()=>setStep(s)}
+              style={{padding:"9px 20px",borderRadius:9,border:"1.5px solid",fontSize:13,fontWeight:600,cursor:"pointer",
+                borderColor:step===s?C.orange:C.border,background:step===s?C.orangeLight:C.white,color:step===s?C.orange:C.grayText}}>
+              {s==="config"?"⚙️ Configurare":"👁️ Preview raport"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {step==="config" && (
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:20}}>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:16,color:C.navy}}>📂 Proiect & Perioade</div>
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:6}}>Proiect</label>
+                <select value={selectedProjId||""} onChange={e=>setSelectedProjId(e.target.value)}
+                  style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",background:C.white,cursor:"pointer",color:C.navy}}>
+                  {(projects||[]).length===0 && <option value="">Niciun proiect — creați unul în Rank Tracker</option>}
+                  {(projects||[]).map(p=><option key={p.id} value={p.id}>{p.name} ({(p.keywords||[]).length} kw)</option>)}
+                </select>
+              </div>
+              <div style={{background:"#EEF1F8",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+                <div style={{fontSize:11,fontWeight:600,color:C.navy,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>📅 Perioada curentă (P1)</div>
+                <div style={{display:"flex",gap:8}}>
+                  <select value={p1Month} onChange={e=>setP1Month(parseInt(e.target.value))}
+                    style={{flex:1,padding:"8px 10px",border:`1.5px solid ${C.border}`,borderRadius:7,fontSize:13,outline:"none",background:C.white,cursor:"pointer"}}>
+                    {MONTHS_FULL.map((m,i)=><option key={i} value={i}>{m}</option>)}
+                  </select>
+                  <select value={p1Year} onChange={e=>setP1Year(parseInt(e.target.value))}
+                    style={{width:90,padding:"8px 10px",border:`1.5px solid ${C.border}`,borderRadius:7,fontSize:13,outline:"none",background:C.white,cursor:"pointer"}}>
+                    {[2023,2024,2025,2026].map(y=><option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{background:C.orangeLight,borderRadius:10,padding:"12px 14px"}}>
+                <div style={{fontSize:11,fontWeight:600,color:C.orange,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>📅 Perioada anterioară (P2)</div>
+                <div style={{display:"flex",gap:8}}>
+                  <select value={p2Month} onChange={e=>setP2Month(parseInt(e.target.value))}
+                    style={{flex:1,padding:"8px 10px",border:`1.5px solid ${C.border}`,borderRadius:7,fontSize:13,outline:"none",background:C.white,cursor:"pointer"}}>
+                    {MONTHS_FULL.map((m,i)=><option key={i} value={i}>{m}</option>)}
+                  </select>
+                  <select value={p2Year} onChange={e=>setP2Year(parseInt(e.target.value))}
+                    style={{width:90,padding:"8px 10px",border:`1.5px solid ${C.border}`,borderRadius:7,fontSize:13,outline:"none",background:C.white,cursor:"pointer"}}>
+                    {[2023,2024,2025,2026].map(y=><option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:20}}>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:16,color:C.navy}}>✏️ Continut text</div>
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Titlu raport</label>
+                <input value={reportTitle} onChange={e=>setReportTitle(e.target.value)} placeholder="Ex: Raport Lunar Octombrie 2025"
+                  style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box"}}
+                  onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Text sumar executiv</label>
+                <textarea value={summaryText} onChange={e=>setSummaryText(e.target.value)} rows={3}
+                  placeholder="Ex: În luna curentă, site-ul a înregistrat îmbunătățiri semnificative..."
+                  style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}
+                  onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
+              </div>
+              <div>
+                <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Note & recomandari</label>
+                <textarea value={notesText} onChange={e=>setNotesText(e.target.value)} rows={3}
+                  placeholder="Ex: Recomandăm crearea de conținut nou pentru keywords cu potențial..."
+                  style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}
+                  onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
+              </div>
+            </div>
+          </div>
+
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:20}}>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:4,color:C.navy}}>📋 Secțiuni raport</div>
+              <div style={{fontSize:12,color:C.grayText,marginBottom:14}}>Bifează, debifează și reordonează cu săgețile</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {sortedSections.map((sec,idx)=>(
+                  <div key={sec.id} style={{display:"flex",alignItems:"center",gap:10,background:sec.enabled?`${accentColor}0a`:C.gray,border:`1.5px solid ${sec.enabled?accentColor:C.border}`,borderRadius:9,padding:"10px 12px"}}>
+                    <input type="checkbox" checked={sec.enabled} onChange={()=>toggleSection(sec.id)} style={{accentColor}}/>
+                    <span style={{fontSize:16}}>{sec.icon}</span>
+                    <span style={{flex:1,fontSize:13,fontWeight:500,color:sec.enabled?C.navy:C.grayText}}>{sec.label}</span>
+                    <div style={{display:"flex",gap:2}}>
+                      <button onClick={()=>moveSection(idx,-1)} disabled={idx===0}
+                        style={{padding:"2px 7px",fontSize:12,borderRadius:5,border:`1px solid ${C.border}`,cursor:idx===0?"default":"pointer",background:C.white,color:idx===0?C.grayMid:C.navy,opacity:idx===0?0.4:1}}>▲</button>
+                      <button onClick={()=>moveSection(idx,1)} disabled={idx===sortedSections.length-1}
+                        style={{padding:"2px 7px",fontSize:12,borderRadius:5,border:`1px solid ${C.border}`,cursor:idx===sortedSections.length-1?"default":"pointer",background:C.white,color:idx===sortedSections.length-1?C.grayMid:C.navy,opacity:idx===sortedSections.length-1?0.4:1}}>▼</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:14}}>
+                <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Max. keywords afișate</label>
+                <input type="number" value={maxKeywords} min={1} max={100} onChange={e=>setMaxKeywords(parseInt(e.target.value)||10)}
+                  style={{width:80,padding:"7px 10px",border:`1.5px solid ${C.border}`,borderRadius:7,fontSize:13,outline:"none",textAlign:"center"}}
+                  onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
+              </div>
+            </div>
+
+            <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:20}}>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:4,color:C.navy}}>💾 Template-uri raport</div>
+              <div style={{fontSize:12,color:C.grayText,marginBottom:14}}>Salvează configurația curentă ca template</div>
+              <div style={{display:"flex",gap:8,marginBottom:14}}>
+                <input value={newTplName} onChange={e=>setNewTplName(e.target.value)} placeholder="Nume template"
+                  onKeyDown={e=>e.key==="Enter"&&handleSaveTemplate()}
+                  style={{flex:1,padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none"}}
+                  onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
+                <button onClick={handleSaveTemplate} disabled={!newTplName.trim()}
+                  style={{padding:"9px 16px",background:C.orange,color:C.white,border:"none",borderRadius:8,fontWeight:600,fontSize:13,cursor:newTplName.trim()?"pointer":"default",opacity:newTplName.trim()?1:0.5}}>
+                  + Salvează
+                </button>
+              </div>
+              {templates.length===0 ? (
+                <div style={{textAlign:"center",padding:"20px 0",color:C.grayText,fontSize:13,background:C.gray,borderRadius:8}}>Niciun template salvat încă</div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {templates.map(tpl=>(
+                    <div key={tpl.id} style={{display:"flex",alignItems:"center",gap:10,background:C.gray,borderRadius:9,padding:"10px 12px",border:`1.5px solid ${activeTplId===tpl.id?C.orange:C.border}`}}>
+                      <span style={{fontSize:16}}>📄</span>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontWeight:600,fontSize:13,color:C.navy}}>{tpl.name}</div>
+                        <div style={{fontSize:11,color:C.grayText}}>{tpl.savedAt}</div>
+                      </div>
+                      <button onClick={()=>handleLoadTemplate(tpl)}
+                        style={{padding:"5px 12px",background:activeTplId===tpl.id?C.orangeLight:C.white,border:`1.5px solid ${activeTplId===tpl.id?C.orange:C.border}`,borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer",color:activeTplId===tpl.id?C.orange:C.grayDark}}>
+                        {activeTplId===tpl.id?"✓ Activ":"Încarcă"}
+                      </button>
+                      <button onClick={()=>handleDeleteTemplate(tpl.id)}
+                        style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#fca5a5",padding:"2px 4px"}}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {tplSaved && <div style={{marginTop:10,fontSize:12,color:C.green,fontWeight:600,textAlign:"center"}}>✓ Template salvat!</div>}
+            </div>
+
+            <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:20}}>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:14,color:C.navy}}>📧 Trimitere raport pe email</div>
+              <div style={{display:"flex",gap:4,marginBottom:16}}>
+                {[["manual","✉️ Trimite acum"],["schedule","⏰ Programează"]].map(([val,label])=>(
+                  <button key={val} onClick={()=>setMailTab(val)}
+                    style={{flex:1,padding:"8px",borderRadius:8,border:"1.5px solid",fontSize:12,fontWeight:600,cursor:"pointer",
+                      borderColor:mailTab===val?C.orange:C.border,background:mailTab===val?C.orangeLight:C.white,color:mailTab===val?C.orange:C.grayText}}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {mailTab==="manual" && (
+                <div>
+                  <div style={{marginBottom:10}}>
+                    <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Destinatar</label>
+                    <input value={mailTo} onChange={e=>setMailTo(e.target.value)} placeholder="client@email.com"
+                      style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box"}}
+                      onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
+                  </div>
+                  <div style={{marginBottom:10}}>
+                    <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Subiect</label>
+                    <input value={mailSubject} onChange={e=>setMailSubject(e.target.value)}
+                      style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box"}}
+                      onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
+                  </div>
+                  <div style={{marginBottom:14}}>
+                    <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Mesaj (opțional)</label>
+                    <textarea value={mailMsg} onChange={e=>setMailMsg(e.target.value)} rows={2}
+                      style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}
+                      onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
+                  </div>
+                  <button onClick={handleSendMail} disabled={mailSending||!mailTo}
+                    style={{width:"100%",padding:"10px",background:mailSent?C.green:mailSending?C.grayMid:C.orange,color:C.white,border:"none",borderRadius:8,fontWeight:700,fontSize:13,cursor:mailTo?"pointer":"default",opacity:mailTo?1:0.5}}>
+                    {mailSent?"✓ Trimis!":mailSending?"Se trimite...":"📤 Trimite raportul"}
+                  </button>
+                </div>
+              )}
+              {mailTab==="schedule" && (
+                <div>
+                  <div style={{marginBottom:10}}>
+                    <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Email destinatar</label>
+                    <input value={scheduleEmail} onChange={e=>setScheduleEmail(e.target.value)} placeholder="client@email.com"
+                      style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box"}}
+                      onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+                    <div>
+                      <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Frecvență</label>
+                      <select value={scheduleFreq} onChange={e=>setScheduleFreq(e.target.value)}
+                        style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",background:C.white,cursor:"pointer"}}>
+                        <option value="weekly">Săptămânal</option>
+                        <option value="monthly">Lunar</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Ziua</label>
+                      <select value={scheduleDay} onChange={e=>setScheduleDay(e.target.value)}
+                        style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",background:C.white,cursor:"pointer"}}>
+                        {Array.from({length:28},(_,i)=><option key={i+1} value={i+1}>Ziua {i+1}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <button onClick={handleSaveSchedule} disabled={!scheduleEmail}
+                    style={{width:"100%",padding:"10px",background:scheduleSaved?C.green:C.orange,color:C.white,border:"none",borderRadius:8,fontWeight:700,fontSize:13,cursor:scheduleEmail?"pointer":"default",opacity:scheduleEmail?1:0.5}}>
+                    {scheduleSaved?"✓ Programare salvată!":"💾 Salvează programarea"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {step==="preview" && (
+        <div>
+          <div style={{display:"flex",gap:10,marginBottom:20,alignItems:"center",flexWrap:"wrap"}}>
+            <div style={{fontSize:13,color:C.grayText,flex:1}}>
+              <strong style={{color:C.navy}}>{project?.name||"Niciun proiect"}</strong>
+              {" · "}<span style={{background:"#EEF1F8",color:C.navy,padding:"2px 8px",borderRadius:6,fontSize:12}}>{p1Label}</span>
+              {" vs "}<span style={{background:C.orangeLight,color:C.orange,padding:"2px 8px",borderRadius:6,fontSize:12}}>{p2Label}</span>
+            </div>
+            <button onClick={handlePDF} disabled={pdfGenerating||!project}
+              style={{padding:"9px 20px",background:pdfGenerating?C.grayMid:C.navy,color:C.white,border:"none",borderRadius:9,fontWeight:600,fontSize:13,cursor:project?"pointer":"default"}}>
+              {pdfGenerating?"⏳ Generare...":"📄 Descarcă PDF"}
+            </button>
+            <button onClick={()=>setStep("config")}
+              style={{padding:"9px 20px",background:C.white,color:C.grayDark,border:`1.5px solid ${C.border}`,borderRadius:9,fontWeight:600,fontSize:13,cursor:"pointer"}}>
+              ← Înapoi
+            </button>
+          </div>
+          {!project ? (
+            <EmptyState icon="📂" title="Selectează un proiect în configurare"/>
+          ) : (
+            <div ref={reportRef}>
+              <ReportPreview config={config} project={project} p1Label={p1Label} p2Label={p2Label}/>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -297,14 +1357,16 @@ export default function App() {
     { id:"keywords", icon:"🔍", label:"Keyword Research" },
     { id:"blog",     icon:"✍️", label:"Blog Topic Finder" },
     { id:"forecast", icon:"🔮", label:"SEO Forecasting" },
+    { id:"report",   icon:"📑", label:"Raportare" },
   ];
 
   const renderPage = () => {
     if (page==="projects") return <ProjectsHome projects={trackerProjects} onSelectProject={handleSelectProject} onNewProject={handleNewProjectFromHome}/>;
     if (page==="keywords") return <KeywordResearch onAddToTracker={handleAddToTracker}/>;
     if (page==="blog")     return <BlogTopics/>;
-    if (page==="rank")     return <RankTracker pendingKeywords={pendingKeywords} onPendingConsumed={()=>setPendingKeywords([])} onProjectsLoaded={setTrackerProjects} initialProjectId={selectedProjectId}/>;
-    if (page==="forecast") return <Forecasting projects={trackerProjects}/>;
+    if (page==="rank")     return <RankTracker pendingKeywords={pendingKeywords} onPendingConsumed={()=>setPendingKeywords([])} onProjectsLoaded={setTrackerProjects} initialProjectId={selectedProjectId} userId={loggedUser}/>;
+    if (page==="forecast") return <Forecasting/>;
+    if (page==="report")   return <RaportSEO projects={trackerProjects}/>;
     return null;
   };
 
