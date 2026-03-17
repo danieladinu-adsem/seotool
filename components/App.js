@@ -22,7 +22,7 @@ function getCTR(pos) {
 function fmtN(n){return n>=1000000?(n/1000000).toFixed(1)+"M":n>=1000?(n/1000).toFixed(1)+"K":Math.round(n).toString();}
 function fmtRON(n){return fmtN(n)+" RON";}
 
-const USERS=[{username:"Daniela",password:"adsem2024"}];
+const USERS=[{username:"Daniela",password:"Parolaseotool13122012."}];
 
 const wordForms={
   "bec":["bec","becuri","becul","becurile"],"becuri":["bec","becuri","becul","becurile"],
@@ -87,7 +87,7 @@ async function loadProjects(userId) {
     const result = await Promise.all(projects.map(async project => {
       const { data: kwData, error: kwError } = await supabase
         .from('keywords')
-        .select('id, keyword, position, device, url, volume')
+        .select('id, keyword, position, position_desktop, position_mobile, url, volume')
         .eq('project_id', project.id);
       if (kwError) {
         console.log('Supabase error details:', JSON.stringify(kwError));
@@ -147,36 +147,42 @@ async function saveProjects(projects, userId) {
   try {
     for (const project of projects || []) {
       // 1. Upsert project
+      const projRow = { id: String(project.id), name: project.name, url: project.url || '', user_id: userId };
+      console.log('[saveProjects] upsert project:', JSON.stringify(projRow));
       const { error: projError } = await supabase
         .from('projects')
-        .upsert({ id: String(project.id), name: project.name, url: project.url, user_id: userId });
+        .upsert(projRow, { onConflict: 'id' });
       if (projError) {
         console.log('Supabase error details:', JSON.stringify(projError));
-        console.error('[saveProjects] eroare project', project.id);
+        console.error('[saveProjects] eroare project', project.id, projError.message);
         continue;
       }
       console.log('[saveProjects] project salvat:', project.id);
 
       // 2. Upsert keywords
       for (const kw of project.keywords || []) {
+        const kwRow = {
+          id: String(kw.id),
+          project_id: String(project.id),
+          keyword: kw.keyword,
+          position: kw.position ?? 0,
+          position_desktop: kw.position_desktop ?? null,
+          position_mobile: kw.position_mobile ?? null,
+          url: kw.url || '',
+          volume: kw.volume || 0,
+        };
+        console.log('[saveProjects] upsert keyword:', kw.keyword, 'id:', kwRow.id);
         const { error: kwError } = await supabase
           .from('keywords')
-          .upsert({
-            id: String(kw.id),
-            project_id: String(project.id),
-            keyword: kw.keyword,
-            position: kw.position,
-            device: kw.device,
-            url: kw.url || '',
-            volume: kw.volume || 0,
-          });
+          .upsert(kwRow, { onConflict: 'id' });
         if (kwError) {
           console.log('Supabase error details:', JSON.stringify(kwError));
-          console.error('[saveProjects] eroare keyword', kw.id, kw.keyword);
+          console.error('[saveProjects] eroare keyword', kw.id, kw.keyword, kwError.message);
           continue;
         }
+        console.log('[saveProjects] keyword salvat:', kw.keyword);
 
-        // 3. Salvează keyword_history: DELETE + INSERT (nu necesită constraint UNIQUE)
+        // 3. Salvează keyword_history: DELETE + INSERT
         const historyRows = (kw.history || [])
           .filter(h => h.date != null && h.position != null)
           .map(h => ({
@@ -190,15 +196,16 @@ async function saveProjects(projects, userId) {
           .eq('keyword_id', String(kw.id));
         if (delHistError) {
           console.log('Supabase error details:', JSON.stringify(delHistError));
-          console.error('[saveProjects] eroare delete history pentru keyword', kw.id);
+          console.error('[saveProjects] eroare delete history kw', kw.id, delHistError.message);
         }
         if (historyRows.length > 0) {
+          console.log('[saveProjects] insert history', historyRows.length, 'rows pentru', kw.keyword);
           const { error: histError } = await supabase
             .from('keyword_history')
             .insert(historyRows);
           if (histError) {
             console.log('Supabase error details:', JSON.stringify(histError));
-            console.error('[saveProjects] eroare insert history pentru keyword', kw.id);
+            console.error('[saveProjects] eroare insert history kw', kw.id, histError.message);
           }
         }
       }
@@ -206,7 +213,7 @@ async function saveProjects(projects, userId) {
     console.log('[saveProjects] done');
   } catch (e) {
     console.log('Supabase error details:', JSON.stringify(e));
-    console.error('[saveProjects] eroare generală:', e);
+    console.error('[saveProjects] eroare generală:', e.message, e);
   }
 }
 
@@ -239,13 +246,13 @@ function EmptyState({icon,title,subtitle}){return <div style={{textAlign:"center
 function VolumeBar({volume,max,color}){const pct=Math.round((volume/max)*100);const col=color||(pct>66?C.orange:pct>33?C.navyMid:C.grayText);return <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:80,height:8,background:C.grayMid,borderRadius:4,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:col,borderRadius:4}}/></div><span style={{fontSize:13,color:C.grayText,minWidth:48}}>{volume>=1000?(volume/1000).toFixed(1)+"K":volume}</span></div>;}
 function PositionBadge({pos}){const color=pos<=3?C.orange:pos<=10?C.navy:pos<=20?C.navyMid:C.grayText;const bg=pos<=3?C.orangeLight:pos<=10?"#EEF1F8":pos<=20?"#F0F2F8":C.gray;return <span style={{fontWeight:700,fontSize:15,color,background:bg,padding:"4px 10px",borderRadius:8,minWidth:36,textAlign:"center",display:"inline-block"}}>#{pos}</span>;}
 function MiniTrend({data}){const[tooltip,setTooltip]=useState(null);const W=80,H=32,max=Math.max(...data),min=Math.min(...data);const pts=data.map((v,i)=>({x:(i/(data.length-1))*W,y:H-((v-min)/(max-min||1))*H,v,i}));const poly=pts.map(p=>`${p.x},${p.y}`).join(" ");return <div style={{position:"relative",display:"inline-block"}}><svg width={W} height={H} onMouseLeave={()=>setTooltip(null)} onMouseMove={e=>{const r=e.currentTarget.getBoundingClientRect();const mx=e.clientX-r.left;setTooltip(pts.reduce((a,b)=>Math.abs(b.x-mx)<Math.abs(a.x-mx)?b:a));}}><polyline points={poly} fill="none" stroke={C.orange} strokeWidth="2" strokeLinejoin="round"/>{tooltip&&<><line x1={tooltip.x} y1={0} x2={tooltip.x} y2={H} stroke={C.orange} strokeWidth="1" strokeDasharray="3,2"/><circle cx={tooltip.x} cy={tooltip.y} r={3} fill={C.orange}/></>}</svg>{tooltip&&<div style={{position:"absolute",bottom:"calc(100% + 6px)",left:tooltip.x>50?"auto":tooltip.x-28,right:tooltip.x>50?0:"auto",background:C.navy,color:C.white,fontSize:11,padding:"4px 8px",borderRadius:6,whiteSpace:"nowrap",pointerEvents:"none",zIndex:10}}>{MONTHS[tooltip.i]}: {tooltip.v>=1000?(tooltip.v/1000).toFixed(1)+"K":tooltip.v}</div>}</div>;}
-function PositionChart({history}){const[tip,setTip]=useState(null);const[range,setRange]=useState("14");if(!history||history.length===0)return null;const filtered=range==="all"?history:history.slice(-parseInt(range));const W=200,H=50,pad=4;const positions=filtered.map(e=>e.position);const maxP=Math.max(...positions),minP=Math.min(...positions);const pts=filtered.map((e,i)=>({x:pad+(i/Math.max(filtered.length-1,1))*(W-pad*2),y:pad+((e.position-minP)/((maxP-minP)||1))*(H-pad*2),pos:e.position,date:e.date}));const poly=pts.map(p=>`${p.x},${p.y}`).join(" ");return <div style={{display:"flex",flexDirection:"column",gap:4}}><div style={{display:"flex",gap:4}}>{[["7","7z"],["14","14z"],["30","30z"],["all","Tot"]].map(([val,label])=><button key={val} onClick={()=>setRange(val)} style={{padding:"2px 7px",fontSize:10,borderRadius:5,border:"1.5px solid",cursor:"pointer",fontWeight:500,borderColor:range===val?C.orange:C.border,background:range===val?C.orangeLight:C.white,color:range===val?C.orange:C.grayText}}>{label}</button>)}</div><div style={{position:"relative",display:"inline-block"}}><svg width={W} height={H} onMouseLeave={()=>setTip(null)} onMouseMove={e=>{const r=e.currentTarget.getBoundingClientRect();const mx=e.clientX-r.left;setTip(pts.reduce((a,b)=>Math.abs(b.x-mx)<Math.abs(a.x-mx)?b:a));}}><polyline points={poly} fill="none" stroke={C.navy} strokeWidth="2" strokeLinejoin="round"/>{tip&&<><line x1={tip.x} y1={0} x2={tip.x} y2={H} stroke={C.navy} strokeWidth="1" strokeDasharray="3,2"/><circle cx={tip.x} cy={tip.y} r={3} fill={C.navy}/></>}</svg>{tip&&<div style={{position:"absolute",bottom:"calc(100% + 4px)",left:tip.x>140?"auto":tip.x-20,right:tip.x>140?0:"auto",background:C.navy,color:C.white,fontSize:11,padding:"4px 8px",borderRadius:6,whiteSpace:"nowrap",pointerEvents:"none",zIndex:10}}>{tip.date}: #{tip.pos}</div>}</div></div>;}
+function PositionChart({history}){const[tip,setTip]=useState(null);const[range,setRange]=useState("14");if(!history||history.length<2)return null;const filtered=range==="all"?history:history.slice(-parseInt(range));const W=200,H=50,pad=4;const positions=filtered.map(e=>e.position);const maxP=Math.max(...positions),minP=Math.min(...positions);const pts=filtered.map((e,i)=>({x:pad+(i/Math.max(filtered.length-1,1))*(W-pad*2),y:pad+((e.position-minP)/((maxP-minP)||1))*(H-pad*2),pos:e.position,date:e.date}));const poly=pts.map(p=>`${p.x},${p.y}`).join(" ");return <div style={{display:"flex",flexDirection:"column",gap:4}}><div style={{display:"flex",gap:4}}>{[["7","7z"],["14","14z"],["30","30z"],["all","Tot"]].map(([val,label])=><button key={val} onClick={()=>setRange(val)} style={{padding:"2px 7px",fontSize:10,borderRadius:5,border:"1.5px solid",cursor:"pointer",fontWeight:500,borderColor:range===val?C.orange:C.border,background:range===val?C.orangeLight:C.white,color:range===val?C.orange:C.grayText}}>{label}</button>)}</div><div style={{position:"relative",display:"inline-block"}}><svg width={W} height={H} onMouseLeave={()=>setTip(null)} onMouseMove={e=>{const r=e.currentTarget.getBoundingClientRect();const mx=e.clientX-r.left;setTip(pts.reduce((a,b)=>Math.abs(b.x-mx)<Math.abs(a.x-mx)?b:a));}}><polyline points={poly} fill="none" stroke={C.navy} strokeWidth="2" strokeLinejoin="round"/>{tip&&<><line x1={tip.x} y1={0} x2={tip.x} y2={H} stroke={C.navy} strokeWidth="1" strokeDasharray="3,2"/><circle cx={tip.x} cy={tip.y} r={3} fill={C.navy}/></>}</svg>{tip&&<div style={{position:"absolute",bottom:"calc(100% + 4px)",left:tip.x>140?"auto":tip.x-20,right:tip.x>140?0:"auto",background:C.navy,color:C.white,fontSize:11,padding:"4px 8px",borderRadius:6,whiteSpace:"nowrap",pointerEvents:"none",zIndex:10}}>{tip.date}: #{tip.pos}</div>}</div></div>;}
 function exportCSV(data,query){const blob=new Blob(["Keyword,Volum lunar\n"+data.map(r=>`"${r.keyword}",${r.volume}`).join("\n")],{type:"text/csv;charset=utf-8;"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`keywords_${query.replace(/\s+/g,"_")}.csv`;a.click();URL.revokeObjectURL(url);}
 
 function CalendarPicker({label,value,onChange,minDate,maxDate}){const[open,setOpen]=useState(false);const[view,setView]=useState(()=>value?new Date(value+"T00:00:00"):new Date());const year=view.getFullYear(),month=view.getMonth();const firstDay=new Date(year,month,1).getDay();const daysInMonth=new Date(year,month+1,0).getDate();const DAYS=["Lu","Ma","Mi","Jo","Vi","Sâ","Du"];const MONS=["Ian","Feb","Mar","Apr","Mai","Iun","Iul","Aug","Sep","Oct","Nov","Dec"];const cells=[];const startOffset=(firstDay+6)%7;for(let i=0;i<startOffset;i++)cells.push(null);for(let d=1;d<=daysInMonth;d++)cells.push(new Date(year,month,d));const selDate=value?new Date(value+"T00:00:00"):null;const isDisabled=d=>{if(!d)return true;if(minDate&&d<new Date(minDate+"T00:00:00"))return true;if(maxDate&&d>new Date(maxDate+"T00:00:00"))return true;return false;};return <div style={{position:"relative",display:"inline-block"}}><div onClick={()=>setOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",border:`1.5px solid ${open?C.orange:C.border}`,borderRadius:8,cursor:"pointer",background:C.white,fontSize:13,color:value?C.navy:C.grayText,minWidth:130,userSelect:"none"}}><span>📅</span><span>{value||label}</span></div>{open&&<div style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:200,background:C.white,border:`1.5px solid ${C.border}`,borderRadius:12,boxShadow:"0 8px 30px rgba(0,0,0,0.12)",padding:14,width:240}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><button onClick={()=>setView(new Date(year,month-1,1))} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:C.navy,padding:"2px 6px"}}>‹</button><span style={{fontWeight:600,fontSize:13,color:C.navy}}>{MONS[month]} {year}</span><button onClick={()=>setView(new Date(year,month+1,1))} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:C.navy,padding:"2px 6px"}}>›</button></div><div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>{DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:10,fontWeight:600,color:C.grayText,padding:"2px 0"}}>{d}</div>)}</div><div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>{cells.map((d,i)=>{if(!d)return <div key={i}/>;const sel=selDate&&d.toDateString()===selDate.toDateString();const dis=isDisabled(d);return <div key={i} onClick={()=>{if(!dis){onChange(fmtDate(d));setOpen(false);}}} style={{textAlign:"center",padding:"5px 2px",borderRadius:6,fontSize:12,cursor:dis?"default":"pointer",fontWeight:sel?700:400,background:sel?C.orange:"transparent",color:dis?C.grayMid:sel?C.white:C.navy,opacity:dis?0.4:1}} onMouseEnter={e=>{if(!dis&&!sel)e.currentTarget.style.background=C.orangeLight;}} onMouseLeave={e=>{if(!sel)e.currentTarget.style.background="transparent";}}>{d.getDate()}</div>;})}</div></div>}</div>;}
 
-function ProjectChart({keywords}){const today=new Date();const[device,setDevice]=useState("all");const[mode,setMode]=useState("preset");const[preset,setPreset]=useState("14");const[p1Start,setP1Start]=useState(fmtDate(addDays(today,-13)));const[p1End,setP1End]=useState(fmtDate(today));const[p2Start,setP2Start]=useState(fmtDate(addDays(today,-27)));const[p2End,setP2End]=useState(fmtDate(addDays(today,-14)));const[tip,setTip]=useState(null);if(!keywords||keywords.length===0)return null;const kws=device==="all"?keywords:keywords.filter(k=>k.device===device);const allDates=[...new Set(kws.flatMap(k=>(k.history||[]).map(h=>h.date)))].map(d=>({str:d,ts:parseHistoryDate(d)})).filter(d=>d.ts).sort((a,b)=>a.ts-b.ts);const avgForDates=dates=>dates.map(({str,ts})=>{const pos=kws.map(k=>{const h=(k.history||[]).find(e=>e.date===str);return h?h.position:null;}).filter(Boolean);return{str,ts,avg:pos.length?Math.round(pos.reduce((a,b)=>a+b,0)/pos.length):null};}).filter(e=>e.avg!==null);let series1=[],series2=[],compareMode=false;if(mode==="preset"){const n=preset==="all"?allDates.length:parseInt(preset);series1=avgForDates(allDates.slice(-n));}else if(mode==="custom"){const s=new Date(p1Start+"T00:00:00"),e=new Date(p1End+"T23:59:59");series1=avgForDates(allDates.filter(d=>d.ts>=s&&d.ts<=e));}else if(mode==="compare"){compareMode=true;const s1=new Date(p1Start+"T00:00:00"),e1=new Date(p1End+"T23:59:59"),s2=new Date(p2Start+"T00:00:00"),e2=new Date(p2End+"T23:59:59");series1=avgForDates(allDates.filter(d=>d.ts>=s1&&d.ts<=e1));series2=avgForDates(allDates.filter(d=>d.ts>=s2&&d.ts<=e2));}const curPos=kws.map(k=>k.position);const curAvg=curPos.length?Math.round(curPos.reduce((a,b)=>a+b,0)/curPos.length):0;const curTop3=curPos.filter(p=>p<=3).length,curTop10=curPos.filter(p=>p<=10).length;const svgW=560,H=140,pad={t:12,r:16,b:28,l:36};const allForScale=compareMode?[...series1,...series2]:series1;const allAvgs=allForScale.map(e=>e.avg);const scaleMax=Math.max(...allAvgs,1),scaleMin=Math.min(...allAvgs,1);const toPt=series=>series.map((e,i)=>({x:pad.l+(i/Math.max(series.length-1,1))*(svgW-pad.l-pad.r),y:pad.t+((e.avg-scaleMin)/((scaleMax-scaleMin)||1))*(H-pad.t-pad.b),avg:e.avg,str:e.str}));const pts1=toPt(series1),pts2=compareMode?toPt(series2):[];const toLine=pts=>pts.map(p=>`${p.x},${p.y}`).join(" ");const yTicks=[scaleMin,Math.round((scaleMin+scaleMax)/2),scaleMax].filter((v,i,a)=>a.indexOf(v)===i);const avg1=series1.length?Math.round(series1.reduce((s,e)=>s+e.avg,0)/series1.length):null;const avg2=series2.length?Math.round(series2.reduce((s,e)=>s+e.avg,0)/series2.length):null;const diff=avg1!==null&&avg2!==null?avg2-avg1:null;
-return(<div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:20,marginBottom:20}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:10}}><div><div style={{fontWeight:600,fontSize:15,marginBottom:2}}>Raportare pozitii</div><div style={{fontSize:12,color:C.grayText}}>{kws.length} keywords {device!=="all"?`· ${device}`:""}</div></div><div style={{display:"flex",gap:4}}>{[["all","Toate"],["desktop","Desktop"],["mobile","Mobil"]].map(([val,label])=><button key={val} onClick={()=>setDevice(val)} style={{padding:"5px 12px",fontSize:12,borderRadius:7,border:"1.5px solid",cursor:"pointer",fontWeight:500,borderColor:device===val?C.orange:C.border,background:device===val?C.orangeLight:C.white,color:device===val?C.orange:C.grayText}}>{label}</button>)}</div></div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:18}}>{[{label:"Pozitie medie curenta",value:curPos.length?`#${curAvg}`:"—",color:C.navy,bg:"#EEF1F8"},{label:"Keywords Top 3",value:curTop3,color:C.orange,bg:C.orangeLight},{label:"Keywords Top 10",value:curTop10,color:C.navy,bg:"#EEF1F8"}].map((s,i)=><div key={i} style={{background:s.bg,borderRadius:8,padding:"10px 14px"}}><div style={{fontSize:11,color:C.grayText,marginBottom:3}}>{s.label}</div><div style={{fontSize:22,fontWeight:700,color:s.color}}>{s.value}</div></div>)}</div><div style={{display:"flex",gap:6,marginBottom:14}}>{[["preset","Preset"],["custom","Perioadă custom"],["compare","Compară perioade"]].map(([val,label])=><button key={val} onClick={()=>setMode(val)} style={{padding:"6px 14px",borderRadius:8,border:"1.5px solid",fontSize:12,cursor:"pointer",fontWeight:500,borderColor:mode===val?C.orange:C.border,background:mode===val?C.orangeLight:C.white,color:mode===val?C.orange:C.grayText}}>{label}</button>)}</div>{mode==="preset"&&<div style={{display:"flex",gap:6,marginBottom:14}}>{[["7","7 zile"],["14","14 zile"],["30","30 zile"],["all","Tot"]].map(([val,label])=><button key={val} onClick={()=>setPreset(val)} style={{padding:"5px 12px",fontSize:12,borderRadius:7,border:"1.5px solid",cursor:"pointer",fontWeight:500,borderColor:preset===val?C.navy:C.border,background:preset===val?"#EEF1F8":C.white,color:preset===val?C.navy:C.grayText}}>{label}</button>)}</div>}{mode==="custom"&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}><span style={{fontSize:12,color:C.grayText,fontWeight:500}}>De la</span><CalendarPicker label="Data start" value={p1Start} onChange={setP1Start} maxDate={p1End}/><span style={{fontSize:12,color:C.grayText,fontWeight:500}}>până la</span><CalendarPicker label="Data end" value={p1End} onChange={setP1End} minDate={p1Start} maxDate={fmtDate(today)}/></div>}{mode==="compare"&&<div style={{display:"flex",gap:16,marginBottom:14,flexWrap:"wrap"}}><div style={{display:"flex",alignItems:"center",gap:8,background:"#EEF1F8",padding:"8px 12px",borderRadius:10}}><div style={{width:10,height:10,borderRadius:"50%",background:C.navy,flexShrink:0}}/><span style={{fontSize:12,fontWeight:500,color:C.navy,marginRight:4}}>P1</span><CalendarPicker label="Start" value={p1Start} onChange={setP1Start} maxDate={p1End}/><span style={{fontSize:11,color:C.grayText}}>→</span><CalendarPicker label="End" value={p1End} onChange={setP1End} minDate={p1Start} maxDate={fmtDate(today)}/></div><div style={{display:"flex",alignItems:"center",gap:8,background:C.orangeLight,padding:"8px 12px",borderRadius:10}}><div style={{width:10,height:10,borderRadius:"50%",background:C.orange,flexShrink:0}}/><span style={{fontSize:12,fontWeight:500,color:C.orange,marginRight:4}}>P2</span><CalendarPicker label="Start" value={p2Start} onChange={setP2Start} maxDate={p2End}/><span style={{fontSize:11,color:C.grayText}}>→</span><CalendarPicker label="End" value={p2End} onChange={setP2End} minDate={p2Start} maxDate={fmtDate(today)}/></div></div>}{compareMode&&avg1!==null&&avg2!==null&&<div style={{display:"flex",gap:10,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}><div style={{background:"#EEF1F8",borderRadius:8,padding:"8px 16px",fontSize:13}}><span style={{color:C.grayText}}>P1 medie: </span><strong style={{color:C.navy}}>#{avg1}</strong></div><div style={{background:C.orangeLight,borderRadius:8,padding:"8px 16px",fontSize:13}}><span style={{color:C.grayText}}>P2 medie: </span><strong style={{color:C.orange}}>#{avg2}</strong></div><div style={{background:diff<0?"#E8F5E9":diff>0?"#FFF0F0":C.gray,borderRadius:8,padding:"8px 16px",fontSize:13}}><span style={{color:C.grayText}}>Diferenta: </span><strong style={{color:diff<0?"#2E7D32":diff>0?"#C62828":C.grayText}}>{diff===0?"—":diff<0?`▲ ${Math.abs(diff)} pozitii mai sus`:`▼ ${diff} pozitii mai jos`}</strong></div></div>}{series1.length<2?<div style={{textAlign:"center",padding:"30px 0",color:C.grayText,fontSize:13}}>Nu există suficiente date pentru perioada selectată.</div>:<div style={{position:"relative"}}><svg viewBox={`0 0 ${svgW} ${H}`} style={{width:"100%",height:H}} onMouseLeave={()=>setTip(null)} onMouseMove={e=>{const r=e.currentTarget.getBoundingClientRect();const mx=(e.clientX-r.left)/r.width*svgW;const near1=pts1.length?pts1.reduce((a,b)=>Math.abs(b.x-mx)<Math.abs(a.x-mx)?b:a):null;const near2=pts2.length?pts2.reduce((a,b)=>Math.abs(b.x-mx)<Math.abs(a.x-mx)?b:a):null;setTip({x:near1?near1.x:near2?.x,p1:near1,p2:near2});}}>{yTicks.map((v,i)=>{const yy=pad.t+((v-scaleMin)/((scaleMax-scaleMin)||1))*(H-pad.t-pad.b);return<g key={i}><line x1={pad.l} y1={yy} x2={svgW-pad.r} y2={yy} stroke={C.grayMid} strokeWidth="1" strokeDasharray="4,3"/><text x={pad.l-4} y={yy+4} fontSize="9" fill={C.grayText} textAnchor="end">#{v}</text></g>})}{pts1.filter((_,i)=>i%Math.max(1,Math.floor(pts1.length/6))===0).map((p,i)=><text key={i} x={p.x} y={H-4} fontSize="9" fill={C.grayText} textAnchor="middle">{p.str}</text>)}{pts1.length>1&&<polyline points={toLine(pts1)} fill="none" stroke={C.navy} strokeWidth="2.5" strokeLinejoin="round"/>}{pts2.length>1&&<polyline points={toLine(pts2)} fill="none" stroke={C.orange} strokeWidth="2.5" strokeLinejoin="round" strokeDasharray="6,3"/>}{tip&&<line x1={tip.x} y1={pad.t} x2={tip.x} y2={H-pad.b} stroke={C.grayMid} strokeWidth="1" strokeDasharray="3,2"/>}{tip?.p1&&<circle cx={tip.p1.x} cy={tip.p1.y} r={4} fill={C.navy}/>}{tip?.p2&&<circle cx={tip.p2.x} cy={tip.p2.y} r={4} fill={C.orange}/>}</svg>{tip&&(tip.p1||tip.p2)&&<div style={{position:"absolute",top:8,left:tip.x/svgW*100>65?"auto":`calc(${tip.x/svgW*100}% + 10px)`,right:tip.x/svgW*100>65?`calc(${(1-tip.x/svgW)*100}% + 10px)`:"auto",background:C.navy,color:C.white,fontSize:11,padding:"6px 10px",borderRadius:8,pointerEvents:"none",whiteSpace:"nowrap",lineHeight:1.8}}>{tip.p1&&<div><span style={{color:"#aac4ff"}}>P1 {tip.p1.str}:</span> <strong>#{tip.p1.avg}</strong></div>}{tip.p2&&<div><span style={{color:"#ffb899"}}>P2 {tip.p2.str}:</span> <strong>#{tip.p2.avg}</strong></div>}</div>}</div>}<div style={{display:"flex",gap:16,marginTop:8}}><div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.grayText}}><div style={{width:20,height:2.5,background:C.navy,borderRadius:2}}/>{compareMode?"Perioada 1":"Medie pozitii"}</div>{compareMode&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.grayText}}><svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke={C.orange} strokeWidth="2.5" strokeDasharray="5,3"/></svg>Perioada 2</div>}</div></div>);}
+function ProjectChart({keywords,activeDevice}){const today=new Date();const[mode,setMode]=useState("preset");const[preset,setPreset]=useState("14");const[p1Start,setP1Start]=useState(fmtDate(addDays(today,-13)));const[p1End,setP1End]=useState(fmtDate(today));const[p2Start,setP2Start]=useState(fmtDate(addDays(today,-27)));const[p2End,setP2End]=useState(fmtDate(addDays(today,-14)));const[tip,setTip]=useState(null);if(!keywords||keywords.length===0)return null;const kws=keywords;const allDates=[...new Set(kws.flatMap(k=>(k.history||[]).map(h=>h.date)))].map(d=>({str:d,ts:parseHistoryDate(d)})).filter(d=>d.ts).sort((a,b)=>a.ts-b.ts);const avgForDates=dates=>dates.map(({str,ts})=>{const pos=kws.map(k=>{const h=(k.history||[]).find(e=>e.date===str);return h?h.position:null;}).filter(Boolean);return{str,ts,avg:pos.length?Math.round(pos.reduce((a,b)=>a+b,0)/pos.length):null};}).filter(e=>e.avg!==null);let series1=[],series2=[],compareMode=false;if(mode==="preset"){const n=preset==="all"?allDates.length:parseInt(preset);series1=avgForDates(allDates.slice(-n));}else if(mode==="custom"){const s=new Date(p1Start+"T00:00:00"),e=new Date(p1End+"T23:59:59");series1=avgForDates(allDates.filter(d=>d.ts>=s&&d.ts<=e));}else if(mode==="compare"){compareMode=true;const s1=new Date(p1Start+"T00:00:00"),e1=new Date(p1End+"T23:59:59"),s2=new Date(p2Start+"T00:00:00"),e2=new Date(p2End+"T23:59:59");series1=avgForDates(allDates.filter(d=>d.ts>=s1&&d.ts<=e1));series2=avgForDates(allDates.filter(d=>d.ts>=s2&&d.ts<=e2));}const curPos=kws.map(k=>activeDevice==='mobile'?k.position_mobile:k.position_desktop).filter(p=>p!=null&&p>0);const curAvg=curPos.length?Math.round(curPos.reduce((a,b)=>a+b,0)/curPos.length):0;const curTop3=curPos.filter(p=>p<=3).length,curTop10=curPos.filter(p=>p<=10).length;const svgW=560,H=140,pad={t:12,r:16,b:28,l:36};const allForScale=compareMode?[...series1,...series2]:series1;const allAvgs=allForScale.map(e=>e.avg);const scaleMax=Math.max(...allAvgs,1),scaleMin=Math.min(...allAvgs,1);const toPt=series=>series.map((e,i)=>({x:pad.l+(i/Math.max(series.length-1,1))*(svgW-pad.l-pad.r),y:pad.t+((e.avg-scaleMin)/((scaleMax-scaleMin)||1))*(H-pad.t-pad.b),avg:e.avg,str:e.str}));const pts1=toPt(series1),pts2=compareMode?toPt(series2):[];const toLine=pts=>pts.map(p=>`${p.x},${p.y}`).join(" ");const yTicks=[scaleMin,Math.round((scaleMin+scaleMax)/2),scaleMax].filter((v,i,a)=>a.indexOf(v)===i);const avg1=series1.length?Math.round(series1.reduce((s,e)=>s+e.avg,0)/series1.length):null;const avg2=series2.length?Math.round(series2.reduce((s,e)=>s+e.avg,0)/series2.length):null;const diff=avg1!==null&&avg2!==null?avg2-avg1:null;
+return(<div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:20,marginBottom:20}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:10}}><div><div style={{fontWeight:600,fontSize:15,marginBottom:2}}>Raportare pozitii</div><div style={{fontSize:12,color:C.grayText}}>{kws.length} keywords · {activeDevice==='mobile'?'📱 Mobil':'🖥 Desktop'}</div></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:18}}>{[{label:"Pozitie medie curenta",value:curPos.length?`#${curAvg}`:"—",color:C.navy,bg:"#EEF1F8"},{label:"Keywords Top 3",value:curTop3,color:C.orange,bg:C.orangeLight},{label:"Keywords Top 10",value:curTop10,color:C.navy,bg:"#EEF1F8"}].map((s,i)=><div key={i} style={{background:s.bg,borderRadius:8,padding:"10px 14px"}}><div style={{fontSize:11,color:C.grayText,marginBottom:3}}>{s.label}</div><div style={{fontSize:22,fontWeight:700,color:s.color}}>{s.value}</div></div>)}</div><div style={{display:"flex",gap:6,marginBottom:14}}>{[["preset","Preset"],["custom","Perioadă custom"],["compare","Compară perioade"]].map(([val,label])=><button key={val} onClick={()=>setMode(val)} style={{padding:"6px 14px",borderRadius:8,border:"1.5px solid",fontSize:12,cursor:"pointer",fontWeight:500,borderColor:mode===val?C.orange:C.border,background:mode===val?C.orangeLight:C.white,color:mode===val?C.orange:C.grayText}}>{label}</button>)}</div>{mode==="preset"&&<div style={{display:"flex",gap:6,marginBottom:14}}>{[["7","7 zile"],["14","14 zile"],["30","30 zile"],["all","Tot"]].map(([val,label])=><button key={val} onClick={()=>setPreset(val)} style={{padding:"5px 12px",fontSize:12,borderRadius:7,border:"1.5px solid",cursor:"pointer",fontWeight:500,borderColor:preset===val?C.navy:C.border,background:preset===val?"#EEF1F8":C.white,color:preset===val?C.navy:C.grayText}}>{label}</button>)}</div>}{mode==="custom"&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}><span style={{fontSize:12,color:C.grayText,fontWeight:500}}>De la</span><CalendarPicker label="Data start" value={p1Start} onChange={setP1Start} maxDate={p1End}/><span style={{fontSize:12,color:C.grayText,fontWeight:500}}>până la</span><CalendarPicker label="Data end" value={p1End} onChange={setP1End} minDate={p1Start} maxDate={fmtDate(today)}/></div>}{mode==="compare"&&<div style={{display:"flex",gap:16,marginBottom:14,flexWrap:"wrap"}}><div style={{display:"flex",alignItems:"center",gap:8,background:"#EEF1F8",padding:"8px 12px",borderRadius:10}}><div style={{width:10,height:10,borderRadius:"50%",background:C.navy,flexShrink:0}}/><span style={{fontSize:12,fontWeight:500,color:C.navy,marginRight:4}}>P1</span><CalendarPicker label="Start" value={p1Start} onChange={setP1Start} maxDate={p1End}/><span style={{fontSize:11,color:C.grayText}}>→</span><CalendarPicker label="End" value={p1End} onChange={setP1End} minDate={p1Start} maxDate={fmtDate(today)}/></div><div style={{display:"flex",alignItems:"center",gap:8,background:C.orangeLight,padding:"8px 12px",borderRadius:10}}><div style={{width:10,height:10,borderRadius:"50%",background:C.orange,flexShrink:0}}/><span style={{fontSize:12,fontWeight:500,color:C.orange,marginRight:4}}>P2</span><CalendarPicker label="Start" value={p2Start} onChange={setP2Start} maxDate={p2End}/><span style={{fontSize:11,color:C.grayText}}>→</span><CalendarPicker label="End" value={p2End} onChange={setP2End} minDate={p2Start} maxDate={fmtDate(today)}/></div></div>}{compareMode&&avg1!==null&&avg2!==null&&<div style={{display:"flex",gap:10,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}><div style={{background:"#EEF1F8",borderRadius:8,padding:"8px 16px",fontSize:13}}><span style={{color:C.grayText}}>P1 medie: </span><strong style={{color:C.navy}}>#{avg1}</strong></div><div style={{background:C.orangeLight,borderRadius:8,padding:"8px 16px",fontSize:13}}><span style={{color:C.grayText}}>P2 medie: </span><strong style={{color:C.orange}}>#{avg2}</strong></div><div style={{background:diff<0?"#E8F5E9":diff>0?"#FFF0F0":C.gray,borderRadius:8,padding:"8px 16px",fontSize:13}}><span style={{color:C.grayText}}>Diferenta: </span><strong style={{color:diff<0?"#2E7D32":diff>0?"#C62828":C.grayText}}>{diff===0?"—":diff<0?`▲ ${Math.abs(diff)} pozitii mai sus`:`▼ ${diff} pozitii mai jos`}</strong></div></div>}{series1.length<2?<div style={{textAlign:"center",padding:"30px 0",color:C.grayText,fontSize:13}}>Nu există suficiente date pentru perioada selectată.</div>:<div style={{position:"relative"}}><svg viewBox={`0 0 ${svgW} ${H}`} style={{width:"100%",height:H}} onMouseLeave={()=>setTip(null)} onMouseMove={e=>{const r=e.currentTarget.getBoundingClientRect();const mx=(e.clientX-r.left)/r.width*svgW;const near1=pts1.length?pts1.reduce((a,b)=>Math.abs(b.x-mx)<Math.abs(a.x-mx)?b:a):null;const near2=pts2.length?pts2.reduce((a,b)=>Math.abs(b.x-mx)<Math.abs(a.x-mx)?b:a):null;setTip({x:near1?near1.x:near2?.x,p1:near1,p2:near2});}}>{yTicks.map((v,i)=>{const yy=pad.t+((v-scaleMin)/((scaleMax-scaleMin)||1))*(H-pad.t-pad.b);return<g key={i}><line x1={pad.l} y1={yy} x2={svgW-pad.r} y2={yy} stroke={C.grayMid} strokeWidth="1" strokeDasharray="4,3"/><text x={pad.l-4} y={yy+4} fontSize="9" fill={C.grayText} textAnchor="end">#{v}</text></g>})}{pts1.filter((_,i)=>i%Math.max(1,Math.floor(pts1.length/6))===0).map((p,i)=><text key={i} x={p.x} y={H-4} fontSize="9" fill={C.grayText} textAnchor="middle">{p.str}</text>)}{pts1.length>1&&<polyline points={toLine(pts1)} fill="none" stroke={C.navy} strokeWidth="2.5" strokeLinejoin="round"/>}{pts2.length>1&&<polyline points={toLine(pts2)} fill="none" stroke={C.orange} strokeWidth="2.5" strokeLinejoin="round" strokeDasharray="6,3"/>}{tip&&<line x1={tip.x} y1={pad.t} x2={tip.x} y2={H-pad.b} stroke={C.grayMid} strokeWidth="1" strokeDasharray="3,2"/>}{tip?.p1&&<circle cx={tip.p1.x} cy={tip.p1.y} r={4} fill={C.navy}/>}{tip?.p2&&<circle cx={tip.p2.x} cy={tip.p2.y} r={4} fill={C.orange}/>}</svg>{tip&&(tip.p1||tip.p2)&&<div style={{position:"absolute",top:8,left:tip.x/svgW*100>65?"auto":`calc(${tip.x/svgW*100}% + 10px)`,right:tip.x/svgW*100>65?`calc(${(1-tip.x/svgW)*100}% + 10px)`:"auto",background:C.navy,color:C.white,fontSize:11,padding:"6px 10px",borderRadius:8,pointerEvents:"none",whiteSpace:"nowrap",lineHeight:1.8}}>{tip.p1&&<div><span style={{color:"#aac4ff"}}>P1 {tip.p1.str}:</span> <strong>#{tip.p1.avg}</strong></div>}{tip.p2&&<div><span style={{color:"#ffb899"}}>P2 {tip.p2.str}:</span> <strong>#{tip.p2.avg}</strong></div>}</div>}</div>}<div style={{display:"flex",gap:16,marginTop:8}}><div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.grayText}}><div style={{width:20,height:2.5,background:C.navy,borderRadius:2}}/>{compareMode?"Perioada 1":"Medie pozitii"}</div>{compareMode&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.grayText}}><svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke={C.orange} strokeWidth="2.5" strokeDasharray="5,3"/></svg>Perioada 2</div>}</div></div>);}
 
 // ── Projects Home ─────────────────────────────────────────────────────────────
 function ProjectsHome({ projects, onSelectProject, onNewProject }) {
@@ -335,15 +342,61 @@ function KeywordResearch({onAddToTracker}){const[query,setQuery]=useState("");co
 function BlogTopics(){const[query,setQuery]=useState("");const[results,setResults]=useState(null);const[loading,setLoading]=useState(false);const[searched,setSearched]=useState("");const[filter,setFilter]=useState("all");const[includeWord,setIncludeWord]=useState("");const[excludeWord,setExcludeWord]=useState("");const handleSearch=async()=>{if(!query.trim())return;setLoading(true);setResults(null);try{const res=await fetch('/api/blogtopics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query})});const data=await res.json();setResults(data.topics||[]);setSearched(query);setFilter("all");}catch(e){console.error(e);setResults([]);}finally{setLoading(false);}};const filtered=results?results.filter(r=>r.volume>0).filter(r=>filter==="all"||r.type===filter).filter(r=>includeWord.trim()===""||r.topic.toLowerCase().includes(includeWord.toLowerCase())).filter(r=>excludeWord.trim()===""||!r.topic.toLowerCase().includes(excludeWord.toLowerCase())):[];const maxVol=filtered.length?Math.max(...filtered.map(r=>r.volume)):1;return <div><h1 style={{fontSize:22,fontWeight:700,marginBottom:4}}>Blog Topic Finder</h1><p style={{color:C.grayText,fontSize:14,marginBottom:24}}>Descopera idei de articole de blog cu volum mare de cautari.</p><div style={{display:"flex",gap:10,marginBottom:28}}><div style={{flex:1,position:"relative"}}><span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:C.grayText}}>✍️</span><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSearch()} placeholder="Ex: asigurare auto, credit ipotecar..." style={{width:"100%",padding:"12px 14px 12px 42px",border:`1.5px solid ${C.border}`,borderRadius:10,fontSize:15,outline:"none",background:C.white,boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></div><button onClick={handleSearch} style={{padding:"12px 28px",background:C.orange,color:C.white,border:"none",borderRadius:10,fontWeight:600,fontSize:15,cursor:"pointer"}}>Cauta</button></div>{loading&&<EmptyState icon="⏳" title="Se incarca rezultatele..."/>}{results&&!loading&&<div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}><span style={{fontSize:14,color:C.grayText}}><strong style={{color:C.navy}}>{filtered.length}</strong> subiecte pentru <strong style={{color:C.orange}}>"{searched}"</strong></span><div style={{display:"flex",gap:6}}>{[["all","Toate"],["direct","Direct legate"],["related","Conexe"]].map(([val,label])=><button key={val} onClick={()=>setFilter(val)} style={{padding:"6px 14px",borderRadius:8,border:"1.5px solid",fontSize:13,cursor:"pointer",fontWeight:500,borderColor:filter===val?C.orange:C.border,background:filter===val?C.orangeLight:C.white,color:filter===val?C.orange:C.grayText}}>{label}</button>)}</div></div><div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap"}}><div style={{flex:1,position:"relative",minWidth:180}}><span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>✅</span><input value={includeWord} onChange={e=>setIncludeWord(e.target.value)} placeholder="Include doar subiecte cu..." style={{width:"100%",padding:"9px 12px 9px 32px",border:`1.5px solid ${C.green}`,borderRadius:8,fontSize:13,outline:"none",background:"#f0fdf4",boxSizing:"border-box",color:C.navy}}/></div><div style={{flex:1,position:"relative",minWidth:180}}><span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>🚫</span><input value={excludeWord} onChange={e=>setExcludeWord(e.target.value)} placeholder="Exclude subiecte cu..." style={{width:"100%",padding:"9px 12px 9px 32px",border:`1.5px solid ${C.red}`,borderRadius:8,fontSize:13,outline:"none",background:"#fef2f2",boxSizing:"border-box",color:C.navy}}/></div></div><div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,overflow:"hidden"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{background:C.gray,borderBottom:`1px solid ${C.border}`}}><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:40}}>#</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em"}}>Subiect</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:120}}>Tip</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:160}}>Volum lunar</th></tr></thead><tbody>{filtered.map((row,i)=>{const isDirect=row.type==="direct";return <tr key={i} style={{borderBottom:`1px solid ${C.grayMid}`}} onMouseEnter={e=>e.currentTarget.style.background=C.gray} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"13px 16px",fontSize:12,color:C.grayMid}}>{i+1}</td><td style={{padding:"13px 16px",fontWeight:500,fontSize:14,color:C.navy}}>{row.topic}</td><td style={{padding:"13px 16px"}}><span style={{fontSize:11,padding:"3px 10px",borderRadius:12,fontWeight:500,background:isDirect?C.orangeLight:"#EEF1F8",color:isDirect?C.orange:C.navy}}>{isDirect?"Direct":"Conex"}</span></td><td style={{padding:"13px 16px"}}><VolumeBar volume={row.volume} max={maxVol} color={isDirect?C.orange:C.navy}/></td></tr>;})}</tbody></table></div></div>}{!results&&!loading&&<EmptyState icon="✍️" title="Introdu un subiect pentru a descoperi idei de blog"/>}</div>;}
 // ── Rank Tracker ──────────────────────────────────────────────────────────────
 function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initialProjectId,userId}){
-  const[projects,setProjects]=useState(null);const[loading,setLoading]=useState(true);const[activeProject,setActiveProject]=useState(initialProjectId||null);const[showNewProject,setShowNewProject]=useState(false);const[newProjectName,setNewProjectName]=useState("");const[newProjectUrl,setNewProjectUrl]=useState("");const[newKw,setNewKw]=useState("");const[newDevice,setNewDevice]=useState("desktop");const[showAddKw,setShowAddKw]=useState(false);const[sortKw,setSortKw]=useState("pos_asc");const[checking,setChecking]=useState(false);const[showDeleteConfirm,setShowDeleteConfirm]=useState(false);const[deleting,setDeleting]=useState(false);
+  const[projects,setProjects]=useState(null);const[loading,setLoading]=useState(true);const[activeProject,setActiveProject]=useState(initialProjectId||null);const[showNewProject,setShowNewProject]=useState(false);const[newProjectName,setNewProjectName]=useState("");const[newProjectUrl,setNewProjectUrl]=useState("");const[newKw,setNewKw]=useState("");const[activeDevice,setActiveDevice]=useState("desktop");const[showAddKw,setShowAddKw]=useState(false);const[showBulkAdd,setShowBulkAdd]=useState(false);const[bulkText,setBulkText]=useState("");const[sortKw,setSortKw]=useState("pos_asc");const[checking,setChecking]=useState(false);const[checkingKwIds,setCheckingKwIds]=useState(new Set());const[updatingVolumes,setUpdatingVolumes]=useState(false);const[showDeleteConfirm,setShowDeleteConfirm]=useState(false);const[deleting,setDeleting]=useState(false);
   useEffect(()=>{loadProjects(userId).then(p=>{const ps=p||[];setProjects(ps);if(initialProjectId)setActiveProject(initialProjectId);else if(ps.length>0)setActiveProject(ps[0].id);setLoading(false);onProjectsLoaded&&onProjectsLoaded(ps);}).catch(()=>{setProjects([]);setLoading(false);});},[userId]);
   useEffect(()=>{if(initialProjectId)setActiveProject(initialProjectId);},[initialProjectId]);
   useEffect(()=>{if(pendingKeywords&&pendingKeywords.length>0&&projects&&projects.length>0){addKeywordsToProject(activeProject||projects[0].id,pendingKeywords);onPendingConsumed();}},[pendingKeywords,projects]);
   const saveAndUpdate=updated=>{setProjects(updated);saveProjects(updated,userId);onProjectsLoaded&&onProjectsLoaded(updated);};
   const addProject=()=>{if(!newProjectName.trim())return;const proj={id:Date.now(),name:newProjectName.trim(),url:newProjectUrl.trim(),keywords:[]};const updated=[...(projects||[]),proj];saveAndUpdate(updated);setActiveProject(proj.id);setShowNewProject(false);setNewProjectName("");setNewProjectUrl("");};
-  const addKeywordsToProject=(projId,keywords)=>{const updated=(projects||[]).map(p=>{if(p.id!==projId)return p;const existing=new Set(p.keywords.map(k=>k.keyword));const newOnes=keywords.filter(kw=>!existing.has(kw)).map(kw=>({id:Date.now()+Math.random(),keyword:kw,position:mockPosition(),url:"",device:newDevice,history:mockHistory()}));return{...p,keywords:[...p.keywords,...newOnes]};});saveAndUpdate(updated);};
-  const addSingleKeyword=projId=>{if(!newKw.trim())return;addKeywordsToProject(projId,[newKw.trim()]);setNewKw("");setShowAddKw(false);};
-  const removeKeyword=(projId,kwId)=>saveAndUpdate((projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.filter(k=>k.id!==kwId)}));
+  const fetchAndSaveVolumes=async(projId,kwList)=>{
+    if(!kwList?.length)return;
+    try{
+      const res=await fetch('/api/keyword-volumes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keywords:kwList.map(k=>k.keyword)})});
+      const{volumes}=await res.json();
+      const updated=(projects||[]).map(p=>{
+        if(p.id!==projId)return p;
+        const newKws=p.keywords.map(k=>{
+          const vol=volumes[k.keyword.toLowerCase()];
+          return vol!=null?{...k,volume:vol}:k;
+        });
+        return{...p,keywords:newKws};
+      });
+      setProjects(updated);
+      saveProjects(updated,userId);
+      onProjectsLoaded&&onProjectsLoaded(updated);
+      if(supabase){
+        for(const kw of kwList){
+          const vol=volumes[kw.keyword.toLowerCase()];
+          if(vol!=null)await supabase.from('keywords').update({volume:vol}).eq('id',String(kw.id));
+        }
+      }
+    }catch(e){console.error('[fetchAndSaveVolumes]',e.message);}
+  };
+  const addKeywordsToProject=(projId,keywords,onDone)=>{
+    const newKwObjects=[];
+    const updated=(projects||[]).map(p=>{
+      if(p.id!==projId)return p;
+      const existingLower=new Set(p.keywords.map(k=>k.keyword.toLowerCase()));
+      const newOnes=keywords.filter(kw=>!existingLower.has(kw.toLowerCase())).map(kw=>{
+        const obj={id:Date.now()+Math.random(),keyword:kw,position:0,position_desktop:null,position_mobile:null,url:"",history:[]};
+        newKwObjects.push(obj);return obj;
+      });
+      const dupes=keywords.length-newOnes.length;
+      if(onDone)onDone(newOnes.length,dupes);
+      return{...p,keywords:[...p.keywords,...newOnes]};
+    });
+    saveAndUpdate(updated);
+    if(newKwObjects.length)setTimeout(()=>fetchAndSaveVolumes(projId,newKwObjects),300);
+  };
+  const addSingleKeyword=projId=>{if(!newKw.trim())return;addKeywordsToProject(projId,[newKw.trim()],(added,dupes)=>{if(dupes>0)alert(`Keyword deja există în proiect.`);});setNewKw("");setShowAddKw(false);};
+  const addBulkKeywords=projId=>{const kws=bulkText.split('\n').map(k=>k.trim()).filter(Boolean);if(!kws.length)return;addKeywordsToProject(projId,kws,(added,dupes)=>{const msg=dupes>0?`${added} keywords adăugate, ${dupes} duplicate ignorate.`:`${added} keywords adăugate.`;alert(msg);});setBulkText("");setShowBulkAdd(false);};
+  const removeKeyword=async(projId,kwId)=>{
+    if(supabase){
+      const{error}=await supabase.from('keywords').delete().eq('id',String(kwId));
+      if(error)console.log('Supabase error details:',JSON.stringify(error));
+    }
+    saveAndUpdate((projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.filter(k=>k.id!==kwId)}));
+  };
   const updateUrl=(projId,kwId,url)=>saveAndUpdate((projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.map(k=>k.id!==kwId?k:{...k,url})}));
   const deleteProject=async projId=>{
     if(supabase&&userId){
@@ -364,8 +417,68 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
     onProjectsLoaded&&onProjectsLoaded(updated);
     setActiveProject(updated.length>0?updated[0].id:null);
   };
-  const bulkDevice=val=>saveAndUpdate((projects||[]).map(p=>p.id!==activeProject?p:{...p,keywords:p.keywords.map(k=>({...k,device:val}))}));
-  const checkNow=()=>{setChecking(true);setTimeout(()=>{const updated=(projects||[]).map(p=>{if(p.id!==activeProject)return p;const keywords=p.keywords.map(k=>{const newPos=Math.max(1,Math.min(100,k.position+Math.floor(Math.random()*11)-5));const today=new Date().toLocaleDateString("ro-RO",{day:"2-digit",month:"short"});const history=[...(k.history||[]).slice(-29),{date:today,position:newPos}];return{...k,position:newPos,history};});return{...p,keywords};});saveAndUpdate(updated);setChecking(false);},1500);};
+  const updateAllVolumes=async()=>{
+    const proj=(projects||[]).find(p=>p.id===activeProject);
+    if(!proj?.keywords?.length)return;
+    setUpdatingVolumes(true);
+    await fetchAndSaveVolumes(proj.id,proj.keywords);
+    setUpdatingVolumes(false);
+  };
+  const checkNow=async()=>{
+    const proj=(projects||[]).find(p=>p.id===activeProject);
+    if(!proj)return;
+    setChecking(true);
+    const today=new Date().toISOString().split('T')[0];
+    const updatedKeywords=await Promise.all((proj.keywords||[]).map(async kw=>{
+      try{
+        const res=await fetch('/api/rankings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw.keyword,url:proj.url,device:activeDevice})});
+        const data=await res.json();
+        const newPos=data.position??null;
+        const rankUrl=data.url||kw.url||'';
+        const posField=activeDevice==='mobile'?'position_mobile':'position_desktop';
+        if(supabase){
+          await supabase.from('keywords').update({[posField]:newPos,position:newPos??kw.position,url:rankUrl}).eq('id',String(kw.id));
+          const{data:existing}=await supabase.from('keyword_history').select('id').eq('keyword_id',String(kw.id)).eq('date',today).maybeSingle();
+          if(existing){await supabase.from('keyword_history').update({position:newPos}).eq('id',existing.id);}
+          else if(newPos!=null){await supabase.from('keyword_history').insert({keyword_id:String(kw.id),position:newPos,date:today});}
+        }
+        const prevHistory=(kw.history||[]).filter(h=>h.date!==today).slice(-29);
+        const history=newPos!=null?[...prevHistory,{date:today,position:newPos}]:kw.history||[];
+        return{...kw,[posField]:newPos,position:newPos??kw.position,url:rankUrl,history};
+      }catch(e){
+        console.error('checkNow error pentru',kw.keyword,e.message);
+        return kw;
+      }
+    }));
+    const updated=(projects||[]).map(p=>p.id!==activeProject?p:{...p,keywords:updatedKeywords});
+    setProjects(updated);
+    onProjectsLoaded&&onProjectsLoaded(updated);
+    setChecking(false);
+  };
+  const checkSingleKeyword=async(projId,kw)=>{
+    const proj=(projects||[]).find(p=>p.id===projId);
+    if(!proj)return;
+    setCheckingKwIds(prev=>new Set([...prev,kw.id]));
+    const today=new Date().toISOString().split('T')[0];
+    try{
+      const res=await fetch('/api/rankings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw.keyword,url:proj.url,device:activeDevice})});
+      const data=await res.json();
+      const newPos=data.position??null;
+      const rankUrl=data.url||kw.url||'';
+      const posField=activeDevice==='mobile'?'position_mobile':'position_desktop';
+      if(supabase){
+        await supabase.from('keywords').update({[posField]:newPos,position:newPos??kw.position,url:rankUrl}).eq('id',String(kw.id));
+        const{data:existing}=await supabase.from('keyword_history').select('id').eq('keyword_id',String(kw.id)).eq('date',today).maybeSingle();
+        if(existing){await supabase.from('keyword_history').update({position:newPos}).eq('id',existing.id);}
+        else if(newPos!=null){await supabase.from('keyword_history').insert({keyword_id:String(kw.id),position:newPos,date:today});}
+      }
+      const prevHistory=(kw.history||[]).filter(h=>h.date!==today).slice(-29);
+      const history=newPos!=null?[...prevHistory,{date:today,position:newPos}]:kw.history||[];
+      const updated=(projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.map(k=>k.id!==kw.id?k:{...k,[posField]:newPos,position:newPos??kw.position,url:rankUrl,history})});
+      setProjects(updated);onProjectsLoaded&&onProjectsLoaded(updated);
+    }catch(e){console.error('checkSingleKeyword error',kw.keyword,e.message);}
+    finally{setCheckingKwIds(prev=>{const s=new Set(prev);s.delete(kw.id);return s;});}
+  };
   const getSortedKeywords=keywords=>{if(!keywords)return[];const kws=[...keywords];if(sortKw==="volume_desc")return kws.sort((a,b)=>(b.volume||0)-(a.volume||0));if(sortKw==="volume_asc")return kws.sort((a,b)=>(a.volume||0)-(b.volume||0));if(sortKw==="pos_asc")return kws.sort((a,b)=>a.position-b.position);if(sortKw==="pos_desc")return kws.sort((a,b)=>b.position-a.position);if(sortKw==="alpha")return kws.sort((a,b)=>a.keyword.localeCompare(b.keyword));return kws;};
   if(loading)return <EmptyState icon="⏳" title="Se incarca..."/>;
   const proj=projects?.find(p=>p.id===activeProject);
@@ -386,21 +499,25 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
           <div style={{marginBottom:20}}><div style={{fontWeight:700,fontSize:16,color:C.navy}}>{proj.name}</div>{proj.url&&<div style={{fontSize:12,color:C.orange,marginTop:2}}>{proj.url}</div>}</div>
           {proj.keywords.length===0?<div style={{textAlign:"center",padding:"40px 0",color:C.grayText,background:C.white,borderRadius:12,border:`1px solid ${C.border}`}}><div style={{fontSize:40,marginBottom:12}}>📊</div><p style={{fontSize:14,color:C.grayDark}}>Niciun keyword adaugat inca</p><p style={{fontSize:12,marginTop:4,marginBottom:20}}>Adauga manual sau importa din Keyword Research</p><div style={{display:"flex",gap:10,justifyContent:"center",padding:"0 20px",flexWrap:"wrap"}}><input value={newKw} onChange={e=>setNewKw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSingleKeyword(proj.id)} placeholder="Ex: pantofi sport ieftini" style={{padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:14,outline:"none",width:260}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/><button onClick={()=>addSingleKeyword(proj.id)} style={{padding:"9px 18px",background:C.orange,color:C.white,border:"none",borderRadius:8,fontWeight:600,fontSize:14,cursor:"pointer"}}>Adauga</button></div></div>
           :<div>
-            <ProjectChart keywords={proj.keywords}/>
+            <ProjectChart keywords={proj.keywords} activeDevice={activeDevice}/>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                 <select value={sortKw} onChange={e=>setSortKw(e.target.value)} style={{padding:"8px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",background:C.white,cursor:"pointer",color:C.navy}}><option value="pos_asc">Pozitie ▲</option><option value="pos_desc">Pozitie ▼</option><option value="volume_desc">Volum ▼</option><option value="volume_asc">Volum ▲</option><option value="alpha">Alfabetic</option></select>
                 <button onClick={checkNow} disabled={checking} style={{padding:"8px 16px",background:checking?C.grayMid:C.orangeLight,color:checking?C.grayText:C.orange,border:`1.5px solid ${checking?C.grayMid:C.orange}`,borderRadius:8,fontSize:13,fontWeight:600,cursor:checking?"not-allowed":"pointer"}}>{checking?"Se verifica...":"Verifica acum"}</button>
-                <div style={{display:"flex",gap:4}}>{[["desktop","Desktop"],["mobile","Mobil"]].map(([val,label])=><button key={val} onClick={()=>bulkDevice(val)} style={{padding:"4px 10px",fontSize:12,borderRadius:6,border:`1.5px solid ${C.border}`,cursor:"pointer",fontWeight:500,background:C.gray,color:C.navy}}>{label}</button>)}</div>
+                <button onClick={updateAllVolumes} disabled={updatingVolumes} style={{padding:"8px 16px",background:updatingVolumes?C.grayMid:C.white,color:updatingVolumes?C.grayText:C.navy,border:`1.5px solid ${updatingVolumes?C.grayMid:C.border}`,borderRadius:8,fontSize:13,fontWeight:600,cursor:updatingVolumes?"not-allowed":"pointer"}}>{updatingVolumes?"Se actualizează...":"🔄 Actualizează volume"}</button>
+                <div style={{display:"flex",gap:4}}>{[["desktop","🖥 Desktop"],["mobile","📱 Mobil"]].map(([val,label])=><button key={val} onClick={()=>setActiveDevice(val)} style={{padding:"4px 10px",fontSize:12,borderRadius:6,border:`1.5px solid ${activeDevice===val?C.orange:C.border}`,cursor:"pointer",fontWeight:600,background:activeDevice===val?C.orangeLight:C.gray,color:activeDevice===val?C.orange:C.navy}}>{label}</button>)}</div>
               </div>
               <div style={{display:"flex",gap:8}}>
-                <button onClick={()=>setShowAddKw(v=>!v)} style={{padding:"8px 16px",background:C.orangeLight,border:`1.5px solid ${C.orange}`,borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:C.orange}}>+ Adauga keyword</button>
-                <button onClick={()=>setShowDeleteConfirm(true)} style={{padding:"8px 16px",background:"#ef4444",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#ffffff"}}>Sterge proiect</button>
+                <button onClick={()=>{setShowAddKw(v=>!v);setShowBulkAdd(false);}} style={{padding:"8px 16px",background:C.orangeLight,border:`1.5px solid ${C.orange}`,borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:C.orange}}>+ Adauga keyword</button>
+                <button onClick={()=>{setShowBulkAdd(v=>!v);setShowAddKw(false);}} style={{padding:"8px 16px",background:C.white,border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:C.navy}}>+ Adaugă în bulk</button>
               </div>
             </div>
             {showAddKw&&<div style={{background:C.gray,border:`1.5px solid ${C.border}`,borderRadius:10,padding:16,marginBottom:16,display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}><div style={{flex:1,minWidth:180}}><label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:4}}>Keyword</label><input value={newKw} onChange={e=>setNewKw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSingleKeyword(proj.id)} placeholder="Ex: pantofi sport ieftini" style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:14,outline:"none",boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></div><div><label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:4}}>Dispozitiv</label><select value={newDevice} onChange={e=>setNewDevice(e.target.value)} style={{padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:14,outline:"none",background:C.white,cursor:"pointer"}}><option value="desktop">Desktop</option><option value="mobile">Mobil</option></select></div><button onClick={()=>addSingleKeyword(proj.id)} style={{padding:"9px 18px",background:C.orange,color:C.white,border:"none",borderRadius:8,fontWeight:600,fontSize:14,cursor:"pointer"}}>Adauga</button></div>}
-            <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,overflow:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:600}}><thead><tr style={{background:C.gray,borderBottom:`1px solid ${C.border}`}}><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em"}}>Keyword</th><th style={{padding:"12px 16px",textAlign:"center",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:80}}>Pozitie</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em"}}>URL</th><th style={{padding:"12px 16px",textAlign:"center",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:100}}>Device</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:220}}>Evolutie</th><th style={{padding:"12px 16px",width:40}}></th></tr></thead><tbody>{getSortedKeywords(proj.keywords).map(kw=><tr key={kw.id} style={{borderBottom:`1px solid ${C.grayMid}`}} onMouseEnter={e=>e.currentTarget.style.background=C.gray} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"13px 16px",fontWeight:500,fontSize:14,color:C.navy}}>{kw.keyword}</td><td style={{padding:"13px 16px",textAlign:"center"}}><PositionBadge pos={kw.position}/></td><td style={{padding:"13px 16px"}}><input value={kw.url} onChange={e=>updateUrl(proj.id,kw.id,e.target.value)} placeholder="https://..." style={{width:"100%",padding:"5px 8px",border:`1.5px solid ${C.border}`,borderRadius:6,fontSize:12,outline:"none",boxSizing:"border-box",color:C.orange}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></td><td style={{padding:"13px 16px",textAlign:"center"}}><select value={kw.device} onChange={e=>saveAndUpdate((projects||[]).map(p=>p.id!==proj.id?p:{...p,keywords:p.keywords.map(k=>k.id!==kw.id?k:{...k,device:e.target.value})}))} style={{padding:"4px 8px",border:`1.5px solid ${C.border}`,borderRadius:6,fontSize:13,outline:"none",background:C.white,cursor:"pointer",color:C.navy}}><option value="desktop">Desktop</option><option value="mobile">Mobil</option></select></td><td style={{padding:"13px 16px"}}><PositionChart history={kw.history}/></td><td style={{padding:"13px 16px"}}><button onClick={()=>removeKeyword(proj.id,kw.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#fca5a5",padding:4}}>×</button></td></tr>)}</tbody></table></div>
-            <p style={{marginTop:14,fontSize:12,color:C.grayText,textAlign:"center"}}>* Pozitii simulate</p>
+            {showBulkAdd&&<div style={{background:C.gray,border:`1.5px solid ${C.border}`,borderRadius:10,padding:16,marginBottom:16}}><label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:6}}>Keywords — unul pe linie (lipește din Excel)</label><textarea value={bulkText} onChange={e=>setBulkText(e.target.value)} rows={8} placeholder={"pantofi sport\npantofi dama\npantofi barbati\n..."} style={{width:"100%",padding:"10px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/><div style={{display:"flex",gap:8,marginTop:10,alignItems:"center"}}><button onClick={()=>addBulkKeywords(proj.id)} disabled={!bulkText.trim()} style={{padding:"9px 20px",background:bulkText.trim()?C.orange:C.grayMid,color:C.white,border:"none",borderRadius:8,fontWeight:600,fontSize:13,cursor:bulkText.trim()?"pointer":"default"}}>Adaugă toate ({bulkText.split('\n').filter(l=>l.trim()).length})</button><button onClick={()=>{setShowBulkAdd(false);setBulkText("");}} style={{padding:"9px 16px",background:C.white,border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,cursor:"pointer",color:C.grayDark}}>Anulează</button></div></div>}
+            <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,overflow:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:600}}><thead><tr style={{background:C.gray,borderBottom:`1px solid ${C.border}`}}><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em"}}>Keyword</th><th style={{padding:"12px 16px",textAlign:"center",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:120}}>Pozitie</th><th style={{padding:"12px 16px",textAlign:"center",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:80}}>Volum</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em"}}>URL</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:220}}>Evolutie</th><th style={{padding:"12px 16px",width:40}}></th></tr></thead><tbody>{getSortedKeywords(proj.keywords).map(kw=><tr key={kw.id} style={{borderBottom:`1px solid ${C.grayMid}`}} onMouseEnter={e=>e.currentTarget.style.background=C.gray} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"13px 16px",fontWeight:500,fontSize:14,color:C.navy}}>{kw.keyword}</td><td style={{padding:"13px 16px",textAlign:"center"}}><PositionBadge pos={activeDevice==='mobile'?kw.position_mobile:kw.position_desktop}/></td><td style={{padding:"13px 16px",textAlign:"center",fontSize:13,fontWeight:600,color:C.grayText}}>{kw.volume>0?fmtN(kw.volume):"—"}</td><td style={{padding:"13px 16px"}}><input value={kw.url} onChange={e=>updateUrl(proj.id,kw.id,e.target.value)} placeholder="https://..." style={{width:"100%",padding:"5px 8px",border:`1.5px solid ${C.border}`,borderRadius:6,fontSize:12,outline:"none",boxSizing:"border-box",color:C.orange}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></td><td style={{padding:"13px 16px"}}><PositionChart history={kw.history}/></td><td style={{padding:"13px 16px"}}><div style={{display:"flex",gap:4,alignItems:"center"}}><button onClick={()=>checkSingleKeyword(proj.id,kw)} disabled={checkingKwIds.has(kw.id)} title="Verifică poziția acum" style={{background:"none",border:"none",cursor:checkingKwIds.has(kw.id)?"default":"pointer",fontSize:15,padding:4,opacity:checkingKwIds.has(kw.id)?0.5:1}}>{checkingKwIds.has(kw.id)?"⏳":"🔄"}</button><button onClick={()=>removeKeyword(proj.id,kw.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#fca5a5",padding:4}}>×</button></div></td></tr>)}</tbody></table></div>
+            <div style={{borderTop:`1px solid ${C.border}`,marginTop:32,paddingTop:20}}>
+              <button onClick={()=>setShowDeleteConfirm(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 18px",background:"#fff5f5",border:"1.5px solid #fca5a5",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#ef4444"}}>🗑 Șterge proiect</button>
+            </div>
           </div>}
         </div>}
       </div>}
@@ -755,9 +872,8 @@ const MONTHS_FULL = ["Ianuarie","Februarie","Martie","Aprilie","Mai","Iunie","Iu
 const DEFAULT_SECTIONS = [
   { id:"summary",   label:"Sumar executiv",            icon:"📋", enabled:true,  order:0 },
   { id:"positions", label:"Pozitii & Volume keywords", icon:"📍", enabled:true,  order:1 },
-  { id:"evolution", label:"Evolutie pozitii",          icon:"📈", enabled:true,  order:2 },
-  { id:"topmovers", label:"Top movers",                icon:"🏆", enabled:true,  order:3 },
-  { id:"notes",     label:"Note & recomandari",        icon:"📝", enabled:false, order:4 },
+  { id:"topmovers", label:"Top movers",                icon:"🏆", enabled:true,  order:2 },
+  { id:"notes",     label:"Note & recomandari",        icon:"📝", enabled:false, order:3 },
 ];
 
 function ReportPreview({ config, project, p1Label, p2Label }) {
@@ -773,8 +889,8 @@ function ReportPreview({ config, project, p1Label, p2Label }) {
   const top10Prev = posPrev.filter(p=>p<=10).length;
   const diffAvg = avgPrev - avgNow;
   const movers = kws.map((k,i)=>({...k,prevPos:posPrev[i],delta:posPrev[i]-k.position})).sort((a,b)=>b.delta-a.delta);
-  const improved = movers.filter(m=>m.delta>0).slice(0,5);
-  const declined = movers.filter(m=>m.delta<0).sort((a,b)=>a.delta-b.delta).slice(0,5);
+  const improved = movers.filter(m=>m.delta>=5).slice(0,5);
+  const declined = movers.filter(m=>m.delta<=-10).sort((a,b)=>a.delta-b.delta).slice(0,5);
   const sections = [...config.sections].sort((a,b)=>a.order-b.order).filter(s=>s.enabled);
   const accentColor = config.accentColor || C.orange;
 
@@ -798,7 +914,7 @@ function ReportPreview({ config, project, p1Label, p2Label }) {
           <div>
             {config.showLogo && <div style={{marginBottom:12}}><Logo variant={config.darkHeader?"dark":"light"} width={150}/></div>}
             <h1 style={{fontSize:22,fontWeight:800,color:config.darkHeader?C.white:C.navy,margin:0,marginBottom:4}}>
-              Raport SEO {config.reportTitle?`— ${config.reportTitle}`:""}
+              Raport SEO
             </h1>
             <div style={{fontSize:13,color:config.darkHeader?"rgba(255,255,255,0.6)":C.grayText}}>
               {project.name} {project.url&&`· ${project.url}`}
@@ -858,50 +974,22 @@ function ReportPreview({ config, project, p1Label, p2Label }) {
               <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead><tr style={{background:C.gray}}>
-                    {["Keyword","Poz. curentă","Poz. anterioară","Variatie","Volum lunar","Trafic estimat"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
+                    {["Keyword","Poz. curentă","Poz. anterioară","Variație","Volum lunar","Trend","Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
                   </tr></thead>
-                  <tbody>{kws.slice(0,config.maxKeywords||999).map((kw,i)=>{
-                    const vol=kw.volume||Math.floor(Math.random()*8000+500);
-                    const traffic=Math.round(vol*getCTR(kw.position));
-                    const maxV=Math.max(...kws.map(k=>k.volume||500),1);
+                  <tbody>{[...kws].sort((a,b)=>(b.volume||0)-(a.volume||0)).slice(0,config.maxKeywords||999).map((kw,i)=>{
+                    const origIdx=kws.indexOf(kw);
+                    const prevPos=posPrev[origIdx];
+                    const allPos=(kw.history||[]).map(h=>h.position).filter(p=>p>0);
+                    const best=allPos.length?Math.min(...allPos):null;
                     return(
                       <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
                         <td style={{padding:"10px 14px",fontWeight:500,fontSize:13,color:C.navy}}>{kw.keyword}</td>
                         <td style={{padding:"10px 14px"}}><PositionBadge pos={kw.position}/></td>
-                        <td style={{padding:"10px 14px"}}><PositionBadge pos={posPrev[i]}/></td>
-                        <td style={{padding:"10px 14px"}}><DeltaBadge delta={posPrev[i]-kw.position}/></td>
-                        <td style={{padding:"10px 14px"}}><VolumeBar volume={vol} max={maxV} color={accentColor}/></td>
-                        <td style={{padding:"10px 14px",fontSize:13,fontWeight:600,color:accentColor}}>{fmtN(traffic)} viz/lună</td>
-                      </tr>
-                    );
-                  })}</tbody>
-                </table>
-              </div>
-            </div>
-          );
-
-          if (sec.id==="evolution") return (
-            <div key="evolution" style={{marginBottom:28}}>
-              <h2 style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-                <span style={{color:accentColor}}>📈</span> Evolutie pozitii (14 zile)
-              </h2>
-              <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
-                <table style={{width:"100%",borderCollapse:"collapse"}}>
-                  <thead><tr style={{background:C.gray}}>
-                    {["Keyword","Trend","Min","Max","Curent"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
-                  </tr></thead>
-                  <tbody>{kws.slice(0,config.maxKeywords||999).map((kw,i)=>{
-                    const hist=kw.history||[];
-                    const last=hist.slice(-14).map(h=>h.position);
-                    const mn=last.length?Math.min(...last):kw.position;
-                    const mx=last.length?Math.max(...last):kw.position;
-                    return(
-                      <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
-                        <td style={{padding:"10px 14px",fontWeight:500,fontSize:13,color:C.navy}}>{kw.keyword}</td>
+                        <td style={{padding:"10px 14px"}}><PositionBadge pos={prevPos}/></td>
+                        <td style={{padding:"10px 14px"}}><DeltaBadge delta={prevPos-kw.position}/></td>
+                        <td style={{padding:"10px 14px",fontSize:12,fontWeight:600,color:C.grayDark}}>{kw.volume>0?fmtN(kw.volume):"—"}</td>
                         <td style={{padding:"10px 14px"}}><EvolutionMini history={kw.history}/></td>
-                        <td style={{padding:"10px 14px",fontSize:12,color:C.green,fontWeight:600}}>#{mn}</td>
-                        <td style={{padding:"10px 14px",fontSize:12,color:C.red,fontWeight:600}}>#{mx}</td>
-                        <td style={{padding:"10px 14px"}}><PositionBadge pos={kw.position}/></td>
+                        <td style={{padding:"10px 14px",fontSize:12,color:C.green,fontWeight:700}}>{best?`#${best}`:"—"}</td>
                       </tr>
                     );
                   })}</tbody>
@@ -956,9 +1044,8 @@ function ReportPreview({ config, project, p1Label, p2Label }) {
           return null;
         })}
 
-        <div style={{borderTop:`1px solid ${C.grayMid}`,paddingTop:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{borderTop:`1px solid ${C.grayMid}`,paddingTop:16}}>
           <span style={{fontSize:11,color:C.grayText}}>Generat de SEO Tool by AdSem · {new Date().toLocaleDateString("ro-RO")}</span>
-          <span style={{fontSize:11,color:C.grayText}}>* Date simulate</span>
         </div>
       </div>
     </div>
@@ -976,14 +1063,9 @@ function RaportSEO({ projects }) {
   const [p2Month, setP2Month] = useState(prevMonth.getMonth());
   const [p2Year, setP2Year] = useState(prevMonth.getFullYear());
   const [sections, setSections] = useState(DEFAULT_SECTIONS);
-  const [reportTitle, setReportTitle] = useState("");
+  const reportTitle = "Raport SEO";
   const [summaryText, setSummaryText] = useState("");
-  const [notesText, setNotesText] = useState("");
-  const [maxKeywords, setMaxKeywords] = useState(20);
-  const [templates, setTemplates] = useState([]);
-  const [newTplName, setNewTplName] = useState("");
-  const [tplSaved, setTplSaved] = useState(false);
-  const [activeTplId, setActiveTplId] = useState(null);
+  const maxKeywords = 999;
   const [mailTab, setMailTab] = useState("manual");
   const [mailTo, setMailTo] = useState("");
   const [mailSubject, setMailSubject] = useState("Raport SEO lunar");
@@ -1000,42 +1082,8 @@ function RaportSEO({ projects }) {
   const project = projects?.find(p=>p.id===selectedProjId);
   const p1Label = `${MONTHS_FULL[p1Month]} ${p1Year}`;
   const p2Label = `${MONTHS_FULL[p2Month]} ${p2Year}`;
-  const config = { sections, reportTitle, summaryText, notesText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords };
+  const config = { sections, reportTitle, summaryText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords };
 
-  const handleSaveTemplate = () => {
-    if(!newTplName.trim()) return;
-    const tpl = {
-      id: Date.now(),
-      name: newTplName.trim(),
-      savedAt: new Date().toLocaleDateString("ro-RO"),
-      sections: JSON.parse(JSON.stringify(sections)),
-      reportTitle, summaryText, notesText, maxKeywords,
-      scheduleFreq, scheduleDay, scheduleEmail, mailSubject,
-    };
-    setTemplates(prev=>[...prev, tpl]);
-    setActiveTplId(tpl.id);
-    setNewTplName("");
-    setTplSaved(true);
-    setTimeout(()=>setTplSaved(false), 2500);
-  };
-
-  const handleLoadTemplate = tpl => {
-    setSections(JSON.parse(JSON.stringify(tpl.sections)));
-    setReportTitle(tpl.reportTitle||"");
-    setSummaryText(tpl.summaryText||"");
-    setNotesText(tpl.notesText||"");
-    setMaxKeywords(tpl.maxKeywords||20);
-    setMailSubject(tpl.mailSubject||"Raport SEO lunar");
-    setScheduleFreq(tpl.scheduleFreq||"monthly");
-    setScheduleDay(tpl.scheduleDay||"1");
-    setScheduleEmail(tpl.scheduleEmail||"");
-    setActiveTplId(tpl.id);
-  };
-
-  const handleDeleteTemplate = id => {
-    setTemplates(prev=>prev.filter(t=>t.id!==id));
-    if(activeTplId===id) setActiveTplId(null);
-  };
 
   const sortedSections = [...sections].sort((a,b)=>a.order-b.order);
   const accentColor = C.orange;
@@ -1074,10 +1122,29 @@ function RaportSEO({ projects }) {
     },400);
   };
 
-  const handleSendMail = () => {
+  const handleSendMail = async () => {
     if(!mailTo) return;
     setMailSending(true);
-    setTimeout(()=>{setMailSending(false);setMailSent(true);setTimeout(()=>setMailSent(false),3000);},1800);
+    try {
+      const reportHtml = reportRef.current?.innerHTML || '';
+      console.log('sending:', { to: mailTo, subject: mailSubject, reportHtml: reportHtml.slice(0, 100) });
+      if (!reportHtml) {
+        throw new Error('Raportul nu a fost generat. Selectează un proiect și încearcă din nou.');
+      }
+      const res = await fetch('/api/send-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: mailTo, subject: mailSubject, message: mailMsg, reportHtml }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Eroare la trimitere');
+      setMailSent(true);
+      setTimeout(() => setMailSent(false), 3000);
+    } catch (e) {
+      alert(`Eroare: ${e.message}`);
+    } finally {
+      setMailSending(false);
+    }
   };
 
   const handleSaveSchedule = () => {
@@ -1148,22 +1215,9 @@ function RaportSEO({ projects }) {
             <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:20}}>
               <div style={{fontWeight:700,fontSize:14,marginBottom:16,color:C.navy}}>✏️ Continut text</div>
               <div style={{marginBottom:14}}>
-                <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Titlu raport</label>
-                <input value={reportTitle} onChange={e=>setReportTitle(e.target.value)} placeholder="Ex: Raport Lunar Octombrie 2025"
-                  style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box"}}
-                  onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
-              </div>
-              <div style={{marginBottom:14}}>
                 <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Text sumar executiv</label>
                 <textarea value={summaryText} onChange={e=>setSummaryText(e.target.value)} rows={3}
                   placeholder="Ex: În luna curentă, site-ul a înregistrat îmbunătățiri semnificative..."
-                  style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}
-                  onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
-              </div>
-              <div>
-                <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Note & recomandari</label>
-                <textarea value={notesText} onChange={e=>setNotesText(e.target.value)} rows={3}
-                  placeholder="Ex: Recomandăm crearea de conținut nou pentru keywords cu potențial..."
                   style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}
                   onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
               </div>
@@ -1189,50 +1243,8 @@ function RaportSEO({ projects }) {
                   </div>
                 ))}
               </div>
-              <div style={{marginTop:14}}>
-                <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Max. keywords afișate</label>
-                <input type="number" value={maxKeywords} min={1} max={100} onChange={e=>setMaxKeywords(parseInt(e.target.value)||10)}
-                  style={{width:80,padding:"7px 10px",border:`1.5px solid ${C.border}`,borderRadius:7,fontSize:13,outline:"none",textAlign:"center"}}
-                  onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
-              </div>
             </div>
 
-            <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:20}}>
-              <div style={{fontWeight:700,fontSize:14,marginBottom:4,color:C.navy}}>💾 Template-uri raport</div>
-              <div style={{fontSize:12,color:C.grayText,marginBottom:14}}>Salvează configurația curentă ca template</div>
-              <div style={{display:"flex",gap:8,marginBottom:14}}>
-                <input value={newTplName} onChange={e=>setNewTplName(e.target.value)} placeholder="Nume template"
-                  onKeyDown={e=>e.key==="Enter"&&handleSaveTemplate()}
-                  style={{flex:1,padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none"}}
-                  onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
-                <button onClick={handleSaveTemplate} disabled={!newTplName.trim()}
-                  style={{padding:"9px 16px",background:C.orange,color:C.white,border:"none",borderRadius:8,fontWeight:600,fontSize:13,cursor:newTplName.trim()?"pointer":"default",opacity:newTplName.trim()?1:0.5}}>
-                  + Salvează
-                </button>
-              </div>
-              {templates.length===0 ? (
-                <div style={{textAlign:"center",padding:"20px 0",color:C.grayText,fontSize:13,background:C.gray,borderRadius:8}}>Niciun template salvat încă</div>
-              ) : (
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  {templates.map(tpl=>(
-                    <div key={tpl.id} style={{display:"flex",alignItems:"center",gap:10,background:C.gray,borderRadius:9,padding:"10px 12px",border:`1.5px solid ${activeTplId===tpl.id?C.orange:C.border}`}}>
-                      <span style={{fontSize:16}}>📄</span>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontWeight:600,fontSize:13,color:C.navy}}>{tpl.name}</div>
-                        <div style={{fontSize:11,color:C.grayText}}>{tpl.savedAt}</div>
-                      </div>
-                      <button onClick={()=>handleLoadTemplate(tpl)}
-                        style={{padding:"5px 12px",background:activeTplId===tpl.id?C.orangeLight:C.white,border:`1.5px solid ${activeTplId===tpl.id?C.orange:C.border}`,borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer",color:activeTplId===tpl.id?C.orange:C.grayDark}}>
-                        {activeTplId===tpl.id?"✓ Activ":"Încarcă"}
-                      </button>
-                      <button onClick={()=>handleDeleteTemplate(tpl.id)}
-                        style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#fca5a5",padding:"2px 4px"}}>×</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {tplSaved && <div style={{marginTop:10,fontSize:12,color:C.green,fontWeight:600,textAlign:"center"}}>✓ Template salvat!</div>}
-            </div>
 
             <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:20}}>
               <div style={{fontWeight:700,fontSize:14,marginBottom:14,color:C.navy}}>📧 Trimitere raport pe email</div>
@@ -1327,12 +1339,17 @@ function RaportSEO({ projects }) {
           {!project ? (
             <EmptyState icon="📂" title="Selectează un proiect în configurare"/>
           ) : (
-            <div ref={reportRef}>
+            <div>
               <ReportPreview config={config} project={project} p1Label={p1Label} p2Label={p2Label}/>
             </div>
           )}
         </div>
       )}
+
+      {/* Div ascuns — reportRef mereu populat pentru generare HTML email */}
+      <div ref={reportRef} style={{position:"absolute",left:"-9999px",top:0,width:900,visibility:"hidden",pointerEvents:"none"}} aria-hidden="true">
+        {project && <ReportPreview config={config} project={project} p1Label={p1Label} p2Label={p2Label}/>}
+      </div>
     </div>
   );
 }
@@ -1344,6 +1361,11 @@ export default function App() {
   const [trackerProjects, setTrackerProjects] = useState([]);
   const [loggedUser, setLoggedUser] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
+
+  useEffect(() => {
+    if (!loggedUser) return;
+    loadProjects(loggedUser).then(p => setTrackerProjects(p || [])).catch(() => setTrackerProjects([]));
+  }, [loggedUser]);
 
   if (!loggedUser) return <LoginScreen onLogin={setLoggedUser}/>;
 

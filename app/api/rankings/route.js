@@ -1,5 +1,5 @@
 export async function POST(request) {
-  const { keyword, url, location_code } = await request.json();
+  const { keyword, url, location_code, device } = await request.json();
   
   const credentials = Buffer.from(
     `${process.env.DATAFORSEO_LOGIN}:${process.env.DATAFORSEO_PASSWORD}`
@@ -17,8 +17,9 @@ export async function POST(request) {
         keyword: keyword,
         location_code: location_code || 2642,
         language_code: 'ro',
-        device: 'desktop',
-        os: 'windows',
+        device: device === 'mobile' ? 'mobile' : 'desktop',
+        os: device === 'mobile' ? 'android' : 'windows',
+        depth: 100,
       }]),
     }
   );
@@ -26,10 +27,10 @@ export async function POST(request) {
   const data = await response.json();
   
   // Gaseste pozitia site-ului in rezultate
+  const normalize = u => (u || '').replace(/^https?:\/\//,'').replace(/^www\./,'').toLowerCase();
+  const urlNorm = normalize(url);
   const items = data?.tasks?.[0]?.result?.[0]?.items || [];
-  const found = items.find(item => 
-    item.url && url && item.url.includes(url.replace('https://','').replace('http://',''))
-  );
+  const found = items.find(item => urlNorm && normalize(item.url).includes(urlNorm));
   
   return Response.json({
     position: found ? found.rank_absolute : null,
