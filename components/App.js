@@ -556,6 +556,8 @@ function Forecasting() {
   const [keywords, setKeywords] = useState([]);
   const [kwInput, setKwInput] = useState("");
   const [chartTip, setChartTip] = useState(null);
+  const [showBulkForecast, setShowBulkForecast] = useState(false);
+  const [bulkForecastText, setBulkForecastText] = useState("");
 
   const SCEN_TARGET = { optimistic: 2, realistic: 5, pessimistic: 15, custom: customPos };
   const SEO_CURVE = [0.05, 0.10, 0.18, 0.30, 0.45, 0.60, 0.72, 0.80, 0.86, 0.91, 0.95, 1.00];
@@ -580,6 +582,39 @@ function Forecasting() {
   };
 
   const removeKeyword = id => setKeywords(prev => prev.filter(k => k.id !== id));
+
+  const resetForm = () => {
+    setKeywords([]);
+    setConvRate(2);
+    setAvgOrder(250);
+    setMonthlyCost(2000);
+    setHorizon(12);
+    setScenario("realistic");
+    setCustomPos(10);
+    setSiteUrl("");
+    setKwInput("");
+    setBulkForecastText("");
+    setShowBulkForecast(false);
+  };
+
+  const addBulkForecastKeywords = async () => {
+    const existing = new Set(keywords.map(k => k.keyword.toLowerCase()));
+    const lines = bulkForecastText.split('\n').map(l => l.trim()).filter(l => l && !existing.has(l.toLowerCase()));
+    const unique = [...new Set(lines.map(l => l.toLowerCase())).values()].map(l => lines.find(x => x.toLowerCase() === l));
+    setBulkForecastText("");
+    setShowBulkForecast(false);
+    for (const kw of unique) {
+      const id = Date.now() + Math.random();
+      setKeywords(prev => [...prev, { id, keyword: kw, volume: 0, currentPos: 50, loading: true }]);
+      const [volRes, rankRes] = await Promise.allSettled([
+        fetch('/api/keywords', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keywords: [kw] }) }).then(r => r.json()),
+        fetch('/api/rankings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: kw, url: siteUrl }) }).then(r => r.json()),
+      ]);
+      const volume     = volRes.status  === 'fulfilled' ? (volRes.value?.tasks?.[0]?.result?.[0]?.search_volume || 0) : 0;
+      const currentPos = rankRes.status === 'fulfilled' ? (rankRes.value?.position || 50) : 50;
+      setKeywords(prev => prev.map(k => k.id === id ? { ...k, volume, currentPos, loading: false } : k));
+    }
+  };
 
   const runCrawl = async () => {
     if (!crawlUrl.trim()) return;
@@ -661,15 +696,18 @@ function Forecasting() {
   };
 
   const calcedKws = keywords.filter(k => !k.loading).map(calcKw);
+  const totalVolume = calcedKws.reduce((s, k) => s + (k.volume || 0), 0);
   const totalCurTraffic = calcedKws.reduce((s, k) => s + k.curTraffic, 0);
   const totalTgtTraffic = calcedKws.reduce((s, k) => s + k.tgtTraffic, 0);
   const totalGain = totalTgtTraffic - totalCurTraffic;
+  const CONV_MULTIPLIER = { optimistic: 1.3, realistic: 1.0, pessimistic: 0.7, custom: 1.0 };
+  const effectiveConvRate = +(convRate * (CONV_MULTIPLIER[scenario] || 1.0)).toFixed(2);
   const months = Array.from({ length: horizon }, (_, i) => {
     const progress = i < SEO_CURVE.length ? SEO_CURVE[i] : 1.0;
     const traffic = Math.round(totalCurTraffic + totalGain * progress);
-    const conversions = traffic * (convRate / 100);
+    const conversions = Math.round(traffic * (effectiveConvRate / 100));
     const revenue = conversions * avgOrder;
-    return { month: i + 1, traffic, conversions: Math.round(conversions), revenue: Math.round(revenue), cost: monthlyCost, roi: monthlyCost > 0 ? Math.round((revenue - monthlyCost) / monthlyCost * 100) : 0 };
+    return { month: i + 1, traffic, conversions, revenue, cost: monthlyCost, roi: monthlyCost > 0 ? Math.round((revenue - monthlyCost) / monthlyCost * 100) : 0 };
   });
 
   const finalMonth = months[months.length - 1];
@@ -697,7 +735,16 @@ function Forecasting() {
 
       {/* Parametri financiari */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
-        {[{ label: "Rată conversie (%)", val: convRate, set: setConvRate, min: 0.1, max: 20, step: 0.1 }, { label: "Valoare medie comandă (RON)", val: avgOrder, set: setAvgOrder, min: 1, max: 10000, step: 10 }, { label: "Cost lunar SEO (RON)", val: monthlyCost, set: setMonthlyCost, min: 0, max: 50000, step: 100 }, { label: "Orizont (luni)", val: horizon, set: setHorizon, min: 1, max: 24, step: 1 }].map((f, i) => (
+        <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
+          <label style={{ fontSize: 11, color: C.grayText, fontWeight: 500, display: "block", marginBottom: 6 }}>Rată conversie (%)</label>
+          <input type="number" value={convRate} min={0.1} max={20} step={0.1} onChange={e => setConvRate(parseFloat(e.target.value) || 0)} style={{ width: "100%", fontSize: 16, fontWeight: 700, color: C.navy, border: "none", outline: "none", background: "transparent", boxSizing: "border-box" }} />
+          {effectiveConvRate !== convRate && (
+            <div style={{ fontSize: 11, marginTop: 4, color: SCEN_COLOR[scenario], fontWeight: 600 }}>
+              Efectiv: {effectiveConvRate}% ({scenario === 'optimistic' ? '+30%' : '-30%'} scenariu {SCEN_LABEL[scenario].toLowerCase()})
+            </div>
+          )}
+        </div>
+        {[{ label: "Valoare medie comandă (RON)", val: avgOrder, set: setAvgOrder, min: 1, max: 10000, step: 10 }, { label: "Cost lunar SEO (RON)", val: monthlyCost, set: setMonthlyCost, min: 0, max: 50000, step: 100 }, { label: "Orizont (luni)", val: horizon, set: setHorizon, min: 1, max: 24, step: 1 }].map((f, i) => (
           <div key={i} style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
             <label style={{ fontSize: 11, color: C.grayText, fontWeight: 500, display: "block", marginBottom: 6 }}>{f.label}</label>
             <input type="number" value={f.val} min={f.min} max={f.max} step={f.step} onChange={e => f.set(parseFloat(e.target.value) || 0)} style={{ width: "100%", fontSize: 16, fontWeight: 700, color: C.navy, border: "none", outline: "none", background: "transparent", boxSizing: "border-box" }} />
@@ -733,10 +780,10 @@ function Forecasting() {
       {/* 1. Carduri sumar */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
         {[
-          { label: "Trafic curent / lună",        value: fmtN(totalCurTraffic), sub: "vizitatori organici",              color: C.grayText, bg: C.gray },
-          { label: "Trafic estimat / lună",        value: fmtN(totalTgtTraffic), sub: `+${fmtN(totalGain)} vizitatori`,  color: C.navy,    bg: "#EEF1F8" },
-          { label: `Venit estimat (luna ${horizon})`, value: fmtRON(finalMonth.revenue), sub: `${finalMonth.conversions} conversii`, color: C.orange, bg: C.orangeLight },
-          { label: `ROI total (${horizon} luni)`,  value: `${overallROI}%`, sub: overallROI > 0 ? "Profitabil ✓" : "Sub break-even", color: overallROI > 0 ? C.green : C.red, bg: overallROI > 0 ? C.greenLight : C.redLight },
+          { label: "Volum total / lună",           value: fmtN(totalVolume),     sub: `${calcedKws.length} keywords`,    color: C.navy,    bg: "#EEF1F8" },
+          { label: "Trafic estimat / lună",         value: fmtN(totalTgtTraffic), sub: `+${fmtN(totalGain)} vizitatori`, color: C.orange,  bg: C.orangeLight },
+          { label: `Venit estimat (luna ${horizon})`, value: fmtRON(finalMonth.revenue), sub: `${finalMonth.conversions} conversii`, color: C.green, bg: C.greenLight },
+          { label: `ROI total (${horizon} luni)`,   value: `${overallROI}%`, sub: overallROI > 0 ? "Profitabil ✓" : "Sub break-even", color: overallROI > 0 ? C.green : C.red, bg: overallROI > 0 ? C.greenLight : C.redLight },
         ].map((s, i) => (
           <div key={i} style={{ background: s.bg, borderRadius: 10, padding: "14px 16px" }}>
             <div style={{ fontSize: 11, color: C.grayText, fontWeight: 500, marginBottom: 4 }}>{s.label}</div>
@@ -771,15 +818,37 @@ function Forecasting() {
       </div>
 
       {/* 3. Formular adăugare keyword */}
-      <div className="no-print" style={{ background: C.gray, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: 14, display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 20 }}>
-        <div style={{ flex: 1 }}>
-          <label style={{ fontSize: 11, fontWeight: 500, color: C.grayDark, display: "block", marginBottom: 4 }}>Keyword</label>
-          <input value={kwInput} onChange={e => setKwInput(e.target.value)} onKeyDown={e => e.key === "Enter" && addKeyword()} placeholder="Ex: pantofi sport ieftini" style={{ width: "100%", padding: "8px 10px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, outline: "none", boxSizing: "border-box" }} onFocus={e => e.target.style.borderColor = C.orange} onBlur={e => e.target.style.borderColor = C.border} />
+      {!siteUrl.trim() && (
+        <div className="no-print" style={{ display: "flex", alignItems: "center", gap: 10, background: "#fffbeb", border: "1.5px solid #fcd34d", borderRadius: 10, padding: "12px 16px", marginBottom: 12 }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <span style={{ fontSize: 13, color: "#92400e" }}>Pentru rezultate relevante, te rugăm să completezi URL-ul site-ului în câmpul de mai sus înainte de a adăuga keywords.</span>
         </div>
-        <button onClick={addKeyword} style={{ padding: "8px 22px", background: C.orange, color: C.white, border: "none", borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>+ Adaugă</button>
-        <button onClick={() => { setShowCrawlModal(true); setCrawlResults(null); setCrawlError(''); }} style={{ padding: "8px 18px", background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", color: C.navy }}>🌐 Importă din site</button>
-        <span style={{ fontSize: 11, color: C.grayText, alignSelf: "center" }}>Volum și poziție se încarcă automat</span>
+      )}
+      <div className="no-print" style={{ background: C.gray, border: `1.5px solid ${siteUrl.trim() ? C.border : "#fcd34d"}`, borderRadius: 10, padding: 14, marginBottom: showBulkForecast ? 0 : 20, borderBottomLeftRadius: showBulkForecast ? 0 : 10, borderBottomRightRadius: showBulkForecast ? 0 : 10 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 11, fontWeight: 500, color: C.grayDark, display: "block", marginBottom: 4 }}>Keyword</label>
+            <input value={kwInput} onChange={e => setKwInput(e.target.value)} onKeyDown={e => e.key === "Enter" && siteUrl.trim() && addKeyword()} placeholder="Ex: pantofi sport ieftini" disabled={!siteUrl.trim()} style={{ width: "100%", padding: "8px 10px", border: `1.5px solid ${C.border}`, borderRadius: 7, fontSize: 13, outline: "none", boxSizing: "border-box", opacity: siteUrl.trim() ? 1 : 0.5 }} onFocus={e => e.target.style.borderColor = C.orange} onBlur={e => e.target.style.borderColor = C.border} />
+          </div>
+          <button onClick={addKeyword} disabled={!siteUrl.trim()} style={{ padding: "8px 22px", background: siteUrl.trim() ? C.orange : C.grayMid, color: C.white, border: "none", borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: siteUrl.trim() ? "pointer" : "not-allowed", whiteSpace: "nowrap", opacity: siteUrl.trim() ? 1 : 0.6 }}>+ Adaugă</button>
+          <button onClick={() => { setShowBulkForecast(v => !v); setBulkForecastText(""); }} disabled={!siteUrl.trim()} style={{ padding: "8px 18px", background: showBulkForecast ? C.orangeLight : C.white, border: `1.5px solid ${showBulkForecast ? C.orange : C.border}`, borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: siteUrl.trim() ? "pointer" : "not-allowed", whiteSpace: "nowrap", color: showBulkForecast ? C.orange : C.navy, opacity: siteUrl.trim() ? 1 : 0.6 }}>+ Adaugă în bulk</button>
+          <button onClick={() => { setShowCrawlModal(true); setCrawlResults(null); setCrawlError(''); }} disabled={!siteUrl.trim()} style={{ padding: "8px 18px", background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: siteUrl.trim() ? "pointer" : "not-allowed", whiteSpace: "nowrap", color: C.navy, opacity: siteUrl.trim() ? 1 : 0.6 }}>🌐 Importă din site</button>
+          <span style={{ fontSize: 11, color: C.grayText, alignSelf: "center" }}>Volum și poziție se încarcă automat</span>
+        </div>
       </div>
+      {showBulkForecast && (
+        <div className="no-print" style={{ background: C.gray, border: `1.5px solid ${C.border}`, borderTop: "none", borderRadius: "0 0 10px 10px", padding: "0 14px 14px", marginBottom: 20 }}>
+          <label style={{ fontSize: 12, fontWeight: 500, color: C.grayDark, display: "block", marginBottom: 6 }}>Keywords — unul pe linie (lipește din Excel)</label>
+          <textarea value={bulkForecastText} onChange={e => setBulkForecastText(e.target.value)} rows={7} placeholder={"pantofi sport\npantofi dama\npantofi barbati\n..."} style={{ width: "100%", padding: "10px 12px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, outline: "none", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} onFocus={e => e.target.style.borderColor = C.orange} onBlur={e => e.target.style.borderColor = C.border} />
+          <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+            <button onClick={addBulkForecastKeywords} disabled={!bulkForecastText.trim()} style={{ padding: "9px 20px", background: bulkForecastText.trim() ? C.orange : C.grayMid, color: C.white, border: "none", borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: bulkForecastText.trim() ? "pointer" : "default" }}>
+              Adaugă toate ({bulkForecastText.split('\n').filter(l => l.trim()).length})
+            </button>
+            <button onClick={() => { setShowBulkForecast(false); setBulkForecastText(""); }} style={{ padding: "9px 16px", background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, cursor: "pointer", color: C.grayDark }}>Anulează</button>
+            <span style={{ fontSize: 11, color: C.grayText }}>Duplicatele și keywords existente sunt ignorate automat</span>
+          </div>
+        </div>
+      )}
 
       {/* Modal crawl */}
       {showCrawlModal && (
@@ -874,6 +943,12 @@ function Forecasting() {
       </div>
 
       <p style={{ marginTop: 12, fontSize: 11, color: C.grayText, textAlign: "center" }}>* Estimări bazate pe CTR mediu per poziție Google.</p>
+
+      <div className="no-print" style={{ borderTop: `1px solid ${C.border}`, marginTop: 24, paddingTop: 20, display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={resetForm} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 20px", background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: "pointer", color: C.grayDark }}>
+          🔄 Resetare formular
+        </button>
+      </div>
     </div>
   );
 }
