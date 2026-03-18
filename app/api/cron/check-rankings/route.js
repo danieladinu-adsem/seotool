@@ -6,8 +6,9 @@ const supabase = createClient(
 );
 
 export async function GET(request) {
-  const secret = request.headers.get('x-cron-secret');
-  if (secret !== process.env.CRON_SECRET) {
+  const headerSecret = request.headers.get('x-cron-secret');
+  const urlSecret = new URL(request.url).searchParams.get('secret');
+  if (headerSecret !== process.env.CRON_SECRET && urlSecret !== process.env.CRON_SECRET) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
