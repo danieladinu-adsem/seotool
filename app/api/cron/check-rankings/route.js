@@ -61,8 +61,10 @@ export async function GET(request) {
           .eq('id', kw.id);
 
         if (updateError) {
-          console.error(`Cron: eroare update keyword ${kw.id}:`, JSON.stringify(updateError));
+          const msg = `update keyword failed: ${JSON.stringify(updateError)}`;
+          console.error(`Cron: ${msg}`);
           results.errors++;
+          results.details.push({ keyword: kw.keyword, project_url: project.url, status: 'error', error: msg });
           continue;
         }
 
@@ -72,16 +74,19 @@ export async function GET(request) {
           .insert({ keyword_id: kw.id, position, date: today });
 
         if (histError) {
-          console.error(`Cron: eroare history keyword ${kw.id}:`, JSON.stringify(histError));
+          const msg = `history insert failed: ${JSON.stringify(histError)}`;
+          console.error(`Cron: ${msg}`);
           results.errors++;
+          results.details.push({ keyword: kw.keyword, project_url: project.url, status: 'error', error: msg });
           continue;
         }
 
         results.updated++;
-        results.details.push({ keyword: kw.keyword, position });
+        results.details.push({ keyword: kw.keyword, project_url: project.url, status: 'ok', position });
       } catch (e) {
         console.error(`Cron: eroare la procesarea keyword ${kw.keyword}:`, e.message);
         results.errors++;
+        results.details.push({ keyword: kw.keyword, project_url: project.url, status: 'error', error: e.message });
       }
     }
   }
