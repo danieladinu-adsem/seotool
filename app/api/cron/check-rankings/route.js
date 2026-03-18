@@ -53,7 +53,7 @@ export async function GET(request) {
         });
 
         const data = await res.json();
-        const position = data.position ?? 100;
+        const position = data.position ?? null;
 
         // Actualizează poziția curentă în tabelul keywords
         const { error: updateError } = await supabase

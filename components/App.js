@@ -342,6 +342,8 @@ function KeywordResearch({onAddToTracker}){const[query,setQuery]=useState("");co
 function BlogTopics(){const[query,setQuery]=useState("");const[results,setResults]=useState(null);const[loading,setLoading]=useState(false);const[searched,setSearched]=useState("");const[filter,setFilter]=useState("all");const[includeWord,setIncludeWord]=useState("");const[excludeWord,setExcludeWord]=useState("");const handleSearch=async()=>{if(!query.trim())return;setLoading(true);setResults(null);try{const res=await fetch('/api/blogtopics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query})});const data=await res.json();setResults(data.topics||[]);setSearched(query);setFilter("all");}catch(e){console.error(e);setResults([]);}finally{setLoading(false);}};const filtered=results?results.filter(r=>r.volume>0).filter(r=>filter==="all"||r.type===filter).filter(r=>includeWord.trim()===""||r.topic.toLowerCase().includes(includeWord.toLowerCase())).filter(r=>excludeWord.trim()===""||!r.topic.toLowerCase().includes(excludeWord.toLowerCase())):[];const maxVol=filtered.length?Math.max(...filtered.map(r=>r.volume)):1;return <div><h1 style={{fontSize:22,fontWeight:700,marginBottom:4}}>Blog Topic Finder</h1><p style={{color:C.grayText,fontSize:14,marginBottom:24}}>Descopera idei de articole de blog cu volum mare de cautari.</p><div style={{display:"flex",gap:10,marginBottom:28}}><div style={{flex:1,position:"relative"}}><span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:C.grayText}}>✍️</span><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSearch()} placeholder="Ex: asigurare auto, credit ipotecar..." style={{width:"100%",padding:"12px 14px 12px 42px",border:`1.5px solid ${C.border}`,borderRadius:10,fontSize:15,outline:"none",background:C.white,boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></div><button onClick={handleSearch} style={{padding:"12px 28px",background:C.orange,color:C.white,border:"none",borderRadius:10,fontWeight:600,fontSize:15,cursor:"pointer"}}>Cauta</button></div>{loading&&<EmptyState icon="⏳" title="Se incarca rezultatele..."/>}{results&&!loading&&<div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}><span style={{fontSize:14,color:C.grayText}}><strong style={{color:C.navy}}>{filtered.length}</strong> subiecte pentru <strong style={{color:C.orange}}>"{searched}"</strong></span><div style={{display:"flex",gap:6}}>{[["all","Toate"],["direct","Direct legate"],["related","Conexe"]].map(([val,label])=><button key={val} onClick={()=>setFilter(val)} style={{padding:"6px 14px",borderRadius:8,border:"1.5px solid",fontSize:13,cursor:"pointer",fontWeight:500,borderColor:filter===val?C.orange:C.border,background:filter===val?C.orangeLight:C.white,color:filter===val?C.orange:C.grayText}}>{label}</button>)}</div></div><div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap"}}><div style={{flex:1,position:"relative",minWidth:180}}><span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>✅</span><input value={includeWord} onChange={e=>setIncludeWord(e.target.value)} placeholder="Include doar subiecte cu..." style={{width:"100%",padding:"9px 12px 9px 32px",border:`1.5px solid ${C.green}`,borderRadius:8,fontSize:13,outline:"none",background:"#f0fdf4",boxSizing:"border-box",color:C.navy}}/></div><div style={{flex:1,position:"relative",minWidth:180}}><span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,pointerEvents:"none"}}>🚫</span><input value={excludeWord} onChange={e=>setExcludeWord(e.target.value)} placeholder="Exclude subiecte cu..." style={{width:"100%",padding:"9px 12px 9px 32px",border:`1.5px solid ${C.red}`,borderRadius:8,fontSize:13,outline:"none",background:"#fef2f2",boxSizing:"border-box",color:C.navy}}/></div></div><div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,overflow:"hidden"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{background:C.gray,borderBottom:`1px solid ${C.border}`}}><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:40}}>#</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em"}}>Subiect</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:120}}>Tip</th><th style={{padding:"12px 16px",textAlign:"left",fontSize:12,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.05em",width:160}}>Volum lunar</th></tr></thead><tbody>{filtered.map((row,i)=>{const isDirect=row.type==="direct";return <tr key={i} style={{borderBottom:`1px solid ${C.grayMid}`}} onMouseEnter={e=>e.currentTarget.style.background=C.gray} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"13px 16px",fontSize:12,color:C.grayMid}}>{i+1}</td><td style={{padding:"13px 16px",fontWeight:500,fontSize:14,color:C.navy}}>{row.topic}</td><td style={{padding:"13px 16px"}}><span style={{fontSize:11,padding:"3px 10px",borderRadius:12,fontWeight:500,background:isDirect?C.orangeLight:"#EEF1F8",color:isDirect?C.orange:C.navy}}>{isDirect?"Direct":"Conex"}</span></td><td style={{padding:"13px 16px"}}><VolumeBar volume={row.volume} max={maxVol} color={isDirect?C.orange:C.navy}/></td></tr>;})}</tbody></table></div></div>}{!results&&!loading&&<EmptyState icon="✍️" title="Introdu un subiect pentru a descoperi idei de blog"/>}</div>;}
 // ── Rank Tracker ──────────────────────────────────────────────────────────────
 function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initialProjectId,userId}){
+  const[isMobile,setIsMobile]=useState(typeof window!=="undefined"&&window.innerWidth<768);
+  useEffect(()=>{const fn=()=>setIsMobile(window.innerWidth<768);window.addEventListener("resize",fn);return()=>window.removeEventListener("resize",fn);},[]);
   const[projects,setProjects]=useState(null);const[loading,setLoading]=useState(true);const[activeProject,setActiveProject]=useState(initialProjectId||null);const[showNewProject,setShowNewProject]=useState(false);const[newProjectName,setNewProjectName]=useState("");const[newProjectUrl,setNewProjectUrl]=useState("");const[newKw,setNewKw]=useState("");const[activeDevice,setActiveDevice]=useState("desktop");const[showAddKw,setShowAddKw]=useState(false);const[showBulkAdd,setShowBulkAdd]=useState(false);const[bulkText,setBulkText]=useState("");const[sortKw,setSortKw]=useState("pos_asc");const[checking,setChecking]=useState(false);const[checkingKwIds,setCheckingKwIds]=useState(new Set());const[updatingVolumes,setUpdatingVolumes]=useState(false);const[showDeleteConfirm,setShowDeleteConfirm]=useState(false);const[deleting,setDeleting]=useState(false);
   useEffect(()=>{loadProjects(userId).then(p=>{const ps=p||[];setProjects(ps);if(initialProjectId)setActiveProject(initialProjectId);else if(ps.length>0)setActiveProject(ps[0].id);setLoading(false);onProjectsLoaded&&onProjectsLoaded(ps);}).catch(()=>{setProjects([]);setLoading(false);});},[userId]);
   useEffect(()=>{if(initialProjectId)setActiveProject(initialProjectId);},[initialProjectId]);
@@ -490,11 +492,21 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
       </div>
       {showDeleteConfirm&&proj&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}><div style={{background:C.white,borderRadius:16,padding:32,width:420,boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}><div style={{fontSize:36,marginBottom:12,textAlign:"center"}}>🗑</div><h2 style={{fontSize:18,fontWeight:700,marginBottom:8,textAlign:"center",color:C.navy}}>Sterge proiect</h2><p style={{fontSize:14,color:C.grayText,textAlign:"center",marginBottom:6}}>Ești sigur că vrei să ștergi proiectul</p><p style={{fontSize:15,fontWeight:700,color:"#ef4444",textAlign:"center",marginBottom:24}}>"{proj.name}"?</p><p style={{fontSize:12,color:C.grayText,textAlign:"center",marginBottom:24,padding:"8px 12px",background:"#fff5f5",borderRadius:8,border:"1px solid #fca5a5"}}>Această acțiune este ireversibilă. Se vor șterge proiectul, toate keyword-urile și tot istoricul de poziții.</p><div style={{display:"flex",gap:10}}><button disabled={deleting} onClick={async()=>{setDeleting(true);await deleteProject(proj.id);setShowDeleteConfirm(false);setDeleting(false);}} style={{flex:1,padding:"11px",background:deleting?"#fca5a5":"#ef4444",color:C.white,border:"none",borderRadius:8,fontWeight:700,fontSize:14,cursor:deleting?"not-allowed":"pointer"}}>{deleting?"Se sterge...":"Da, sterge"}</button><button disabled={deleting} onClick={()=>setShowDeleteConfirm(false)} style={{flex:1,padding:"11px",background:C.gray,border:`1.5px solid ${C.border}`,borderRadius:8,fontWeight:600,fontSize:14,cursor:"pointer",color:C.grayDark}}>Anulează</button></div></div></div>}
       {showNewProject&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.3)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100}}><div style={{background:C.white,borderRadius:16,padding:32,width:400,boxShadow:"0 20px 60px rgba(0,0,0,0.15)"}}><h2 style={{fontSize:18,fontWeight:700,marginBottom:20}}>Proiect nou</h2><div style={{marginBottom:14}}><label style={{fontSize:13,fontWeight:500,color:C.grayDark,display:"block",marginBottom:6}}>Nume proiect</label><input value={newProjectName} onChange={e=>setNewProjectName(e.target.value)} placeholder="Ex: Site-ul meu" style={{width:"100%",padding:"10px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:14,outline:"none",boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></div><div style={{marginBottom:24}}><label style={{fontSize:13,fontWeight:500,color:C.grayDark,display:"block",marginBottom:6}}>URL site</label><input value={newProjectUrl} onChange={e=>setNewProjectUrl(e.target.value)} placeholder="Ex: https://siteulmeu.ro" style={{width:"100%",padding:"10px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:14,outline:"none",boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></div><div style={{display:"flex",gap:10}}><button onClick={addProject} style={{flex:1,padding:"10px",background:C.orange,color:C.white,border:"none",borderRadius:8,fontWeight:600,cursor:"pointer"}}>Creeaza</button><button onClick={()=>setShowNewProject(false)} style={{flex:1,padding:"10px",background:C.gray,border:`1.5px solid ${C.border}`,borderRadius:8,fontWeight:500,cursor:"pointer",color:C.grayText}}>Anuleaza</button></div></div></div>}
-      {projects?.length>0&&<div style={{display:"flex",gap:20}}>
-        <div style={{width:200,flexShrink:0}}>
-          <div style={{fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Proiecte</div>
-          {projects.map(p=><div key={p.id} onClick={()=>setActiveProject(p.id)} style={{padding:"10px 12px",borderRadius:8,cursor:"pointer",marginBottom:4,background:activeProject===p.id?C.orangeLight:"transparent",border:`1.5px solid ${activeProject===p.id?C.orange:"transparent"}`}}><div style={{fontWeight:600,fontSize:13,color:activeProject===p.id?C.orange:C.navy}}>{p.name}</div><div style={{fontSize:11,color:C.grayText,marginTop:2}}>{p.keywords.length} keywords</div></div>)}
-        </div>
+      {projects?.length>0&&<div style={{display:"flex",gap:20,flexDirection:isMobile?"column":"row"}}>
+        {isMobile?(
+          <div style={{background:C.white,borderRadius:10,border:`1px solid ${C.border}`,padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:13,fontWeight:600,color:C.grayText,whiteSpace:"nowrap"}}>📂 Proiect:</span>
+            <select value={activeProject||""} onChange={e=>setActiveProject(e.target.value)}
+              style={{flex:1,padding:"8px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:14,outline:"none",background:C.white,cursor:"pointer",color:C.navy,fontWeight:600}}>
+              {projects.map(p=><option key={p.id} value={p.id}>{p.name} ({p.keywords.length} kw)</option>)}
+            </select>
+          </div>
+        ):(
+          <div style={{width:200,flexShrink:0}}>
+            <div style={{fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Proiecte</div>
+            {projects.map(p=><div key={p.id} onClick={()=>setActiveProject(p.id)} style={{padding:"10px 12px",borderRadius:8,cursor:"pointer",marginBottom:4,background:activeProject===p.id?C.orangeLight:"transparent",border:`1.5px solid ${activeProject===p.id?C.orange:"transparent"}`}}><div style={{fontWeight:600,fontSize:13,color:activeProject===p.id?C.orange:C.navy}}>{p.name}</div><div style={{fontSize:11,color:C.grayText,marginTop:2}}>{p.keywords.length} keywords</div></div>)}
+          </div>
+        )}
         {proj&&<div style={{flex:1,minWidth:0}}>
           <div style={{marginBottom:20}}><div style={{fontWeight:700,fontSize:16,color:C.navy}}>{proj.name}</div>{proj.url&&<div style={{fontSize:12,color:C.orange,marginTop:2}}>{proj.url}</div>}</div>
           {proj.keywords.length===0?<div style={{textAlign:"center",padding:"40px 0",color:C.grayText,background:C.white,borderRadius:12,border:`1px solid ${C.border}`}}><div style={{fontSize:40,marginBottom:12}}>📊</div><p style={{fontSize:14,color:C.grayDark}}>Niciun keyword adaugat inca</p><p style={{fontSize:12,marginTop:4,marginBottom:20}}>Adauga manual sau importa din Keyword Research</p><div style={{display:"flex",gap:10,justifyContent:"center",padding:"0 20px",flexWrap:"wrap"}}><input value={newKw} onChange={e=>setNewKw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSingleKeyword(proj.id)} placeholder="Ex: pantofi sport ieftini" style={{padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:14,outline:"none",width:260}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/><button onClick={()=>addSingleKeyword(proj.id)} style={{padding:"9px 18px",background:C.orange,color:C.white,border:"none",borderRadius:8,fontWeight:600,fontSize:14,cursor:"pointer"}}>Adauga</button></div></div>
@@ -876,21 +888,50 @@ const DEFAULT_SECTIONS = [
   { id:"notes",     label:"Note & recomandari",        icon:"📝", enabled:false, order:3 },
 ];
 
-function ReportPreview({ config, project, p1Label, p2Label }) {
+function ReportPreview({ config, project, p1Label, p2Label, activeDevice }) {
   if (!project) return null;
   const kws = project.keywords || [];
-  const posNow = kws.map(k=>k.position);
-  const avgNow = posNow.length ? Math.round(posNow.reduce((a,b)=>a+b,0)/posNow.length) : 0;
-  const top3Now = posNow.filter(p=>p<=3).length;
-  const top10Now = posNow.filter(p=>p<=10).length;
-  const posPrev = posNow.map(p=>Math.min(100,p+Math.floor(Math.random()*8)+2));
-  const avgPrev = posPrev.length ? Math.round(posPrev.reduce((a,b)=>a+b,0)/posPrev.length) : 0;
-  const top3Prev = posPrev.filter(p=>p<=3).length;
-  const top10Prev = posPrev.filter(p=>p<=10).length;
-  const diffAvg = avgPrev - avgNow;
-  const movers = kws.map((k,i)=>({...k,prevPos:posPrev[i],delta:posPrev[i]-k.position})).sort((a,b)=>b.delta-a.delta);
-  const improved = movers.filter(m=>m.delta>=5).slice(0,5);
-  const declined = movers.filter(m=>m.delta<=-10).sort((a,b)=>a.delta-b.delta).slice(0,5);
+  const posField = activeDevice === 'mobile' ? 'position_mobile' : 'position_desktop';
+  const getPosNow = k => k[posField] ?? k.position;
+  const getPosPrev = (k, field='position') => {
+    const entries = (k.history||[]).filter(h => {
+      const d = new Date(h.date);
+      return d.getMonth() === config.p2Month && d.getFullYear() === config.p2Year;
+    });
+    if (!entries.length) return null;
+    const val = entries[entries.length-1][field];
+    return val ?? null;
+  };
+  const posNow = kws.map(k=>getPosNow(k));
+  const posNowValid = posNow.filter(p=>p!=null&&p>0);
+  const avgNow = posNowValid.length ? Math.round(posNowValid.reduce((a,b)=>a+b,0)/posNowValid.length) : 0;
+  const top3Now = posNowValid.filter(p=>p<=3).length;
+  const top10Now = posNowValid.filter(p=>p<=10).length;
+  const posPrev = kws.map(k=>getPosPrev(k));
+  const posPrevValid = posPrev.filter(p=>p!=null&&p>0);
+  const avgPrev = posPrevValid.length ? Math.round(posPrevValid.reduce((a,b)=>a+b,0)/posPrevValid.length) : 0;
+  const top3Prev = posPrevValid.filter(p=>p<=3).length;
+  const top10Prev = posPrevValid.filter(p=>p<=10).length;
+  const diffAvg = avgPrev && avgNow ? avgPrev - avgNow : 0;
+  // statistici separate desktop/mobile
+  const deskPos = kws.map(k=>k.position_desktop).filter(p=>p!=null&&p>0);
+  const mobPos = kws.map(k=>k.position_mobile).filter(p=>p!=null&&p>0);
+  const avgDesk = deskPos.length ? Math.round(deskPos.reduce((a,b)=>a+b,0)/deskPos.length) : null;
+  const avgMob = mobPos.length ? Math.round(mobPos.reduce((a,b)=>a+b,0)/mobPos.length) : null;
+  const top3Desk = deskPos.filter(p=>p<=3).length;
+  const top3Mob = mobPos.filter(p=>p<=3).length;
+  const top10Desk = deskPos.filter(p=>p<=10).length;
+  const top10Mob = mobPos.filter(p=>p<=10).length;
+  const movers = kws.map((k,i)=>({
+    ...k,
+    curPos:posNow[i],
+    prevPos:posPrev[i],
+    prevPosDesktop:getPosPrev(k,'position_desktop'),
+    prevPosMobile:getPosPrev(k,'position_mobile'),
+    delta:(posPrev[i]&&posNow[i])?(posPrev[i]-posNow[i]):null
+  })).sort((a,b)=>b.delta-a.delta);
+  const improved = movers.filter(m=>m.delta!=null&&m.delta>=5).slice(0,5);
+  const declined = movers.filter(m=>m.delta!=null&&m.delta<=-10).sort((a,b)=>a.delta-b.delta).slice(0,5);
   const sections = [...config.sections].sort((a,b)=>a.order-b.order).filter(s=>s.enabled);
   const accentColor = config.accentColor || C.orange;
 
@@ -942,17 +983,21 @@ function ReportPreview({ config, project, p1Label, p2Label }) {
               </h2>
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
                 {[
-                  {label:"Pozitie medie",cur:`#${avgNow}`,prev:`#${avgPrev}`,delta:diffAvg,better:diffAvg>0},
-                  {label:"Keywords Top 3",cur:top3Now,prev:top3Prev,delta:top3Now-top3Prev,better:top3Now>=top3Prev},
-                  {label:"Keywords Top 10",cur:top10Now,prev:top10Prev,delta:top10Now-top10Prev,better:top10Now>=top10Prev},
+                  {label:"Pozitie medie",desk:avgDesk?`#${avgDesk}`:"—",mob:avgMob?`#${avgMob}`:"—"},
+                  {label:"Keywords Top 3",desk:top3Desk,mob:top3Mob},
+                  {label:"Keywords Top 10",desk:top10Desk,mob:top10Mob},
                 ].map((s,i)=>(
                   <div key={i} style={{background:C.gray,borderRadius:10,padding:"14px 16px"}}>
-                    <div style={{fontSize:11,color:C.grayText,fontWeight:500,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>{s.label}</div>
-                    <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between"}}>
-                      <div style={{fontSize:26,fontWeight:800,color:accentColor}}>{s.cur}</div>
-                      <div style={{textAlign:"right"}}>
-                        <div style={{fontSize:11,color:C.grayText}}>anterior: {s.prev}</div>
-                        <div style={{fontSize:12,fontWeight:700,color:s.better?C.green:C.red}}>{s.delta===0?"—":s.delta>0?`+${s.delta}`:s.delta}</div>
+                    <div style={{fontSize:11,color:C.grayText,fontWeight:500,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.04em"}}>{s.label}</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <span style={{fontSize:11,color:C.grayText}}>🖥 Desktop</span>
+                        <span style={{fontSize:20,fontWeight:800,color:accentColor}}>{s.desk}</span>
+                      </div>
+                      <div style={{height:1,background:C.border}}/>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <span style={{fontSize:11,color:C.grayText}}>📱 Mobile</span>
+                        <span style={{fontSize:20,fontWeight:800,color:C.navy}}>{s.mob}</span>
                       </div>
                     </div>
                   </div>
@@ -974,19 +1019,18 @@ function ReportPreview({ config, project, p1Label, p2Label }) {
               <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead><tr style={{background:C.gray}}>
-                    {["Keyword","Poz. curentă","Poz. anterioară","Variație","Volum lunar","Trend","Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
+                    {["Keyword","🖥 Desktop","📱 Mobile","Poz. ant. Desktop","Poz. ant. Mobile","Volum lunar","Trend","Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
                   </tr></thead>
-                  <tbody>{[...kws].sort((a,b)=>(b.volume||0)-(a.volume||0)).slice(0,config.maxKeywords||999).map((kw,i)=>{
-                    const origIdx=kws.indexOf(kw);
-                    const prevPos=posPrev[origIdx];
+                  <tbody>{[...movers].sort((a,b)=>(b.volume||0)-(a.volume||0)).slice(0,config.maxKeywords||999).map((kw,i)=>{
                     const allPos=(kw.history||[]).map(h=>h.position).filter(p=>p>0);
                     const best=allPos.length?Math.min(...allPos):null;
                     return(
                       <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
                         <td style={{padding:"10px 14px",fontWeight:500,fontSize:13,color:C.navy}}>{kw.keyword}</td>
-                        <td style={{padding:"10px 14px"}}><PositionBadge pos={kw.position}/></td>
-                        <td style={{padding:"10px 14px"}}><PositionBadge pos={prevPos}/></td>
-                        <td style={{padding:"10px 14px"}}><DeltaBadge delta={prevPos-kw.position}/></td>
+                        <td style={{padding:"10px 14px"}}><PositionBadge pos={kw.position_desktop}/></td>
+                        <td style={{padding:"10px 14px"}}><PositionBadge pos={kw.position_mobile}/></td>
+                        <td style={{padding:"10px 14px"}}>{kw.prevPosDesktop?<PositionBadge pos={kw.prevPosDesktop}/>:<span style={{color:C.grayText,fontSize:12}}>—</span>}</td>
+                        <td style={{padding:"10px 14px"}}>{kw.prevPosMobile?<PositionBadge pos={kw.prevPosMobile}/>:<span style={{color:C.grayText,fontSize:12}}>—</span>}</td>
                         <td style={{padding:"10px 14px",fontSize:12,fontWeight:600,color:C.grayDark}}>{kw.volume>0?fmtN(kw.volume):"—"}</td>
                         <td style={{padding:"10px 14px"}}><EvolutionMini history={kw.history}/></td>
                         <td style={{padding:"10px 14px",fontSize:12,color:C.green,fontWeight:700}}>{best?`#${best}`:"—"}</td>
@@ -1077,12 +1121,13 @@ function RaportSEO({ projects }) {
   const [scheduleEmail, setScheduleEmail] = useState("");
   const [scheduleSaved, setScheduleSaved] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [activeDevice, setActiveDevice] = useState("desktop");
   const reportRef = useRef(null);
 
   const project = projects?.find(p=>p.id===selectedProjId);
   const p1Label = `${MONTHS_FULL[p1Month]} ${p1Year}`;
   const p2Label = `${MONTHS_FULL[p2Month]} ${p2Year}`;
-  const config = { sections, reportTitle, summaryText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords };
+  const config = { sections, reportTitle, summaryText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords, p2Month, p2Year };
 
 
   const sortedSections = [...sections].sort((a,b)=>a.order-b.order);
@@ -1160,7 +1205,7 @@ function RaportSEO({ projects }) {
           <h1 style={{fontSize:22,fontWeight:700,marginBottom:4}}>Raportare</h1>
           <p style={{color:C.grayText,fontSize:14}}>Generează, customizează și trimite rapoarte SEO profesionale.</p>
         </div>
-        <div style={{display:"flex",gap:8}}>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
           {["config","preview"].map(s=>(
             <button key={s} onClick={()=>setStep(s)}
               style={{padding:"9px 20px",borderRadius:9,border:"1.5px solid",fontSize:13,fontWeight:600,cursor:"pointer",
@@ -1340,7 +1385,7 @@ function RaportSEO({ projects }) {
             <EmptyState icon="📂" title="Selectează un proiect în configurare"/>
           ) : (
             <div>
-              <ReportPreview config={config} project={project} p1Label={p1Label} p2Label={p2Label}/>
+              <ReportPreview config={config} project={project} p1Label={p1Label} p2Label={p2Label} activeDevice={activeDevice}/>
             </div>
           )}
         </div>
@@ -1348,7 +1393,7 @@ function RaportSEO({ projects }) {
 
       {/* Div ascuns — reportRef mereu populat pentru generare HTML email */}
       <div ref={reportRef} style={{position:"absolute",left:"-9999px",top:0,width:900,visibility:"hidden",pointerEvents:"none"}} aria-hidden="true">
-        {project && <ReportPreview config={config} project={project} p1Label={p1Label} p2Label={p2Label}/>}
+        {project && <ReportPreview config={config} project={project} p1Label={p1Label} p2Label={p2Label} activeDevice={activeDevice}/>}
       </div>
     </div>
   );
@@ -1361,6 +1406,14 @@ export default function App() {
   const [trackerProjects, setTrackerProjects] = useState([]);
   const [loggedUser, setLoggedUser] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
+  const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth < 768);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     if (!loggedUser) return;
@@ -1392,28 +1445,73 @@ export default function App() {
     return null;
   };
 
+  const navItemClick = id => { setPage(id); if (isMobile) setDrawerOpen(false); };
+
+  const sidebarContent = (
+    <>
+      <div style={{padding:"20px 20px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <Logo variant="dark" width={150}/>
+        {isMobile && (
+          <button onClick={()=>setDrawerOpen(false)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.6)",fontSize:20,cursor:"pointer",padding:4,lineHeight:1}}>✕</button>
+        )}
+      </div>
+      <nav style={{flex:1,padding:"12px 10px",overflowY:"auto"}}>
+        <div style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.3)",textTransform:"uppercase",letterSpacing:"0.08em",padding:"4px 12px 8px"}}>Functii</div>
+        {NAV.map(item=>(
+          <div key={item.id} onClick={()=>navItemClick(item.id)}
+            style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",borderRadius:8,cursor:"pointer",marginBottom:2,background:page===item.id?"rgba(255,107,43,0.15)":"transparent",color:page===item.id?C.orange:"rgba(255,255,255,0.85)",fontWeight:600,fontSize:13.5}}>
+            <span style={{fontSize:15}}>{item.icon}</span><span>{item.label}</span>
+          </div>
+        ))}
+      </nav>
+      <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+        <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:8}}>👤 {loggedUser}</div>
+        <button onClick={()=>{setLoggedUser(null);setPage("projects");}} style={{width:"100%",padding:"8px",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,fontSize:11,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:500}}>Deconectare</button>
+      </div>
+    </>
+  );
+
   return (
     <div style={{display:"flex",height:"100vh",fontFamily:"Inter,'Segoe UI',sans-serif",background:C.gray,color:C.navy}}>
-      <div style={{width:220,background:C.navy,display:"flex",flexDirection:"column",flexShrink:0}}>
-        <div style={{padding:"20px 20px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-          <Logo variant="dark" width={170}/>
+      <style>{`
+        @media (max-width: 768px) {
+          table { display: block !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; }
+          button { min-height: 44px !important; }
+          input, select, textarea { min-height: 44px !important; font-size: 16px !important; }
+          [style*="repeat(3,1fr)"] { grid-template-columns: 1fr 1fr !important; }
+          [style*="repeat(4,1fr)"] { grid-template-columns: 1fr 1fr !important; }
+          [style*="1fr 1fr 1fr"] { grid-template-columns: 1fr 1fr !important; }
+          [style*="gridTemplateColumns"] { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
+
+      {/* Overlay backdrop pe mobil */}
+      {isMobile && drawerOpen && (
+        <div onClick={()=>setDrawerOpen(false)}
+          style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:99}}/>
+      )}
+
+      {/* Sidebar */}
+      {isMobile ? (
+        <div style={{position:"fixed",top:0,left:drawerOpen?0:-240,width:240,height:"100vh",background:C.navy,display:"flex",flexDirection:"column",flexShrink:0,zIndex:100,transition:"left 0.25s ease",boxShadow:drawerOpen?"4px 0 24px rgba(0,0,0,0.3)":"none"}}>
+          {sidebarContent}
         </div>
-        <nav style={{flex:1,padding:"12px 10px",overflowY:"auto"}}>
-          <div style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.3)",textTransform:"uppercase",letterSpacing:"0.08em",padding:"4px 12px 8px"}}>Functii</div>
-          {NAV.map(item=>(
-            <div key={item.id} onClick={()=>setPage(item.id)}
-              style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,cursor:"pointer",marginBottom:2,background:page===item.id?"rgba(255,107,43,0.15)":"transparent",color:page===item.id?C.orange:"rgba(255,255,255,0.85)",fontWeight:600,fontSize:13.5}}>
-              <span style={{fontSize:15}}>{item.icon}</span><span>{item.label}</span>
-            </div>
-          ))}
-        </nav>
-        <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.08)"}}>
-          <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:8}}>👤 {loggedUser}</div>
-          <button onClick={()=>{setLoggedUser(null);setPage("projects");}} style={{width:"100%",padding:"6px",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,fontSize:11,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:500}}>Deconectare</button>
-          <div style={{fontSize:10,color:"rgba(255,255,255,0.2)",textAlign:"center",marginTop:8}}>v0.4 — date simulate</div>
+      ) : (
+        <div style={{width:220,background:C.navy,display:"flex",flexDirection:"column",flexShrink:0}}>
+          {sidebarContent}
         </div>
+      )}
+
+      {/* Conținut principal */}
+      <div style={{flex:1,overflow:"auto",padding:isMobile?16:32,paddingTop:isMobile?64:32}}>
+        {isMobile && (
+          <button onClick={()=>setDrawerOpen(true)}
+            style={{position:"fixed",top:10,left:10,zIndex:98,background:C.navy,color:C.white,border:"none",borderRadius:8,width:44,height:44,fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.25)"}}>
+            ☰
+          </button>
+        )}
+        {renderPage()}
       </div>
-      <div style={{flex:1,overflow:"auto",padding:32}}>{renderPage()}</div>
     </div>
   );
 }
