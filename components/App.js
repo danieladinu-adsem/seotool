@@ -436,7 +436,9 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
     if(!proj)return;
     setChecking(true);
     const today=new Date().toISOString().split('T')[0];
-    const updatedKeywords=await Promise.all((proj.keywords||[]).map(async kw=>{
+    const updatedKeywords=[];
+    for(let i=0;i<(proj.keywords||[]).length;i++){
+      const kw=proj.keywords[i];
       try{
         const res=await fetch('/api/rankings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw.keyword,url:proj.url,device:activeDevice})});
         const data=await res.json();
@@ -451,12 +453,13 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
         }
         const prevHistory=(kw.history||[]).filter(h=>h.date!==today).slice(-29);
         const history=newPos!=null?[...prevHistory,{date:today,position:newPos}]:kw.history||[];
-        return{...kw,[posField]:newPos,position:newPos??kw.position,url:rankUrl,history};
+        updatedKeywords.push({...kw,[posField]:newPos,position:newPos??kw.position,url:rankUrl,history});
       }catch(e){
         console.error('checkNow error pentru',kw.keyword,e.message);
-        return kw;
+        updatedKeywords.push(kw);
       }
-    }));
+      if(i<(proj.keywords||[]).length-1)await new Promise(r=>setTimeout(r,500));
+    }
     const updated=(projects||[]).map(p=>p.id!==activeProject?p:{...p,keywords:updatedKeywords});
     setProjects(updated);
     onProjectsLoaded&&onProjectsLoaded(updated);
