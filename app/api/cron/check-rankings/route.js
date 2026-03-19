@@ -25,7 +25,7 @@ export async function GET(request) {
   // Încarcă toate proiectele
   const { data: projects, error: projError } = await supabase
     .from('projects')
-    .select('id, url');
+    .select('id, url, auto_check');
 
   if (projError) {
     console.error('Cron: eroare la încărcarea proiectelor:', JSON.stringify(projError));
@@ -34,6 +34,7 @@ export async function GET(request) {
 
   for (const project of projects || []) {
     if (!project.url) continue;
+    if (project.auto_check === false) { console.log(`Cron: skip proiect ${project.id} (auto_check dezactivat)`); continue; }
 
     // Încarcă keywords pentru proiect
     const { data: keywords, error: kwError } = await supabase
@@ -49,7 +50,7 @@ export async function GET(request) {
 
     for (const kw of keywords || []) {
       try {
-        // Verifică desktop
+        // Verifică doar desktop
         const resD = await fetch(`${baseUrl}/api/rankings`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -57,25 +58,12 @@ export async function GET(request) {
         });
         const dataD = await resD.json();
         const posDesktop = dataD.position ?? null;
+        const position = posDesktop;
 
-        await new Promise(r => setTimeout(r, 200));
-
-        // Verifică mobile
-        const resM = await fetch(`${baseUrl}/api/rankings`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keyword: kw.keyword, url: project.url, device: 'mobile' }),
-        });
-        const dataM = await resM.json();
-        const posMobile = dataM.position ?? null;
-
-        // Poziție generică = desktop (pentru history/grafic)
-        const position = posDesktop ?? posMobile ?? null;
-
-        // Actualizează position_desktop, position_mobile și position în keywords
+        // Actualizează position_desktop și position în keywords (mobile rămâne neschimbat)
         const { error: updateError } = await supabase
           .from('keywords')
-          .update({ position_desktop: posDesktop, position_mobile: posMobile, position })
+          .update({ position_desktop: posDesktop, position })
           .eq('id', kw.id);
 
         if (updateError) {
@@ -101,7 +89,7 @@ export async function GET(request) {
         }
 
         results.updated++;
-        results.details.push({ keyword: kw.keyword, project_url: project.url, status: 'ok', posDesktop, posMobile });
+        results.details.push({ keyword: kw.keyword, project_url: project.url, status: 'ok', posDesktop });
 
         await new Promise(r => setTimeout(r, 200));
       } catch (e) {
