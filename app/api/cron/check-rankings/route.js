@@ -49,20 +49,33 @@ export async function GET(request) {
 
     for (const kw of keywords || []) {
       try {
-        // Obține poziția curentă de la DataForSEO
-        const res = await fetch(`${baseUrl}/api/rankings`, {
+        // Verifică desktop
+        const resD = await fetch(`${baseUrl}/api/rankings`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keyword: kw.keyword, url: project.url }),
+          body: JSON.stringify({ keyword: kw.keyword, url: project.url, device: 'desktop' }),
         });
+        const dataD = await resD.json();
+        const posDesktop = dataD.position ?? null;
 
-        const data = await res.json();
-        const position = data.position ?? null;
+        await new Promise(r => setTimeout(r, 200));
 
-        // Actualizează poziția curentă în tabelul keywords
+        // Verifică mobile
+        const resM = await fetch(`${baseUrl}/api/rankings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keyword: kw.keyword, url: project.url, device: 'mobile' }),
+        });
+        const dataM = await resM.json();
+        const posMobile = dataM.position ?? null;
+
+        // Poziție generică = desktop (pentru history/grafic)
+        const position = posDesktop ?? posMobile ?? null;
+
+        // Actualizează position_desktop, position_mobile și position în keywords
         const { error: updateError } = await supabase
           .from('keywords')
-          .update({ position })
+          .update({ position_desktop: posDesktop, position_mobile: posMobile, position })
           .eq('id', kw.id);
 
         if (updateError) {
@@ -73,21 +86,24 @@ export async function GET(request) {
           continue;
         }
 
-        // Salvează în keyword_history
-        const { error: histError } = await supabase
+        // Salvează în keyword_history (upsert pe date)
+        const { data: existing } = await supabase
           .from('keyword_history')
-          .insert({ keyword_id: kw.id, position, date: today });
+          .select('id')
+          .eq('keyword_id', kw.id)
+          .eq('date', today)
+          .maybeSingle();
 
-        if (histError) {
-          const msg = `history insert failed: ${JSON.stringify(histError)}`;
-          console.error(`Cron: ${msg}`);
-          results.errors++;
-          results.details.push({ keyword: kw.keyword, project_url: project.url, status: 'error', error: msg });
-          continue;
+        if (existing) {
+          await supabase.from('keyword_history').update({ position }).eq('id', existing.id);
+        } else if (position != null) {
+          await supabase.from('keyword_history').insert({ keyword_id: kw.id, position, date: today });
         }
 
         results.updated++;
-        results.details.push({ keyword: kw.keyword, project_url: project.url, status: 'ok', position });
+        results.details.push({ keyword: kw.keyword, project_url: project.url, status: 'ok', posDesktop, posMobile });
+
+        await new Promise(r => setTimeout(r, 200));
       } catch (e) {
         console.error(`Cron: eroare la procesarea keyword ${kw.keyword}:`, e.message);
         results.errors++;
