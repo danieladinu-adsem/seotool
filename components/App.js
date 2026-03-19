@@ -344,7 +344,7 @@ function BlogTopics(){const[query,setQuery]=useState("");const[results,setResult
 function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initialProjectId,userId}){
   const[isMobile,setIsMobile]=useState(false);
   useEffect(()=>{setIsMobile(window.innerWidth<768);const fn=()=>setIsMobile(window.innerWidth<768);window.addEventListener("resize",fn);return()=>window.removeEventListener("resize",fn);},[]);
-  const[projects,setProjects]=useState(null);const[loading,setLoading]=useState(true);const[activeProject,setActiveProject]=useState(initialProjectId||null);const[showNewProject,setShowNewProject]=useState(false);const[newProjectName,setNewProjectName]=useState("");const[newProjectUrl,setNewProjectUrl]=useState("");const[newKw,setNewKw]=useState("");const[newDevice,setNewDevice]=useState("desktop");const[activeDevice,setActiveDevice]=useState("desktop");const[showAddKw,setShowAddKw]=useState(false);const[showBulkAdd,setShowBulkAdd]=useState(false);const[bulkText,setBulkText]=useState("");const[sortKw,setSortKw]=useState("volume_desc");const[checking,setChecking]=useState(false);const[checkingKwIds,setCheckingKwIds]=useState(new Set());const[updatingVolumes,setUpdatingVolumes]=useState(false);const[showDeleteConfirm,setShowDeleteConfirm]=useState(false);const[deleting,setDeleting]=useState(false);
+  const[projects,setProjects]=useState(null);const[loading,setLoading]=useState(true);const[activeProject,setActiveProject]=useState(initialProjectId||null);const[showNewProject,setShowNewProject]=useState(false);const[newProjectName,setNewProjectName]=useState("");const[newProjectUrl,setNewProjectUrl]=useState("");const[newKw,setNewKw]=useState("");const[newDevice,setNewDevice]=useState("desktop");const[activeDevice,setActiveDevice]=useState("desktop");const[showAddKw,setShowAddKw]=useState(false);const[showBulkAdd,setShowBulkAdd]=useState(false);const[bulkText,setBulkText]=useState("");const[sortKw,setSortKw]=useState("volume_desc");const[checking,setChecking]=useState(false);const[checkProgress,setCheckProgress]=useState({done:0,total:0});const[checkingKwIds,setCheckingKwIds]=useState(new Set());const[updatingVolumes,setUpdatingVolumes]=useState(false);const[showDeleteConfirm,setShowDeleteConfirm]=useState(false);const[deleting,setDeleting]=useState(false);
   useEffect(()=>{loadProjects(userId).then(p=>{const ps=p||[];setProjects(ps);if(initialProjectId)setActiveProject(initialProjectId);else if(ps.length>0)setActiveProject(ps[0].id);setLoading(false);onProjectsLoaded&&onProjectsLoaded(ps);}).catch(()=>{setProjects([]);setLoading(false);});},[userId]);
   useEffect(()=>{if(initialProjectId)setActiveProject(initialProjectId);},[initialProjectId]);
   useEffect(()=>{if(pendingKeywords&&pendingKeywords.length>0&&projects&&projects.length>0){addKeywordsToProject(activeProject||projects[0].id,pendingKeywords);onPendingConsumed();}},[pendingKeywords,projects]);
@@ -435,9 +435,11 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
     const proj=(projects||[]).find(p=>p.id===activeProject);
     if(!proj)return;
     setChecking(true);
+    const total=(proj.keywords||[]).length;
+    setCheckProgress({done:0,total});
     const today=new Date().toISOString().split('T')[0];
     const updatedKeywords=[];
-    for(let i=0;i<(proj.keywords||[]).length;i++){
+    for(let i=0;i<total;i++){
       const kw=proj.keywords[i];
       try{
         const res=await fetch('/api/rankings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw.keyword,url:proj.url,device:activeDevice})});
@@ -458,7 +460,8 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
         console.error('checkNow error pentru',kw.keyword,e.message);
         updatedKeywords.push(kw);
       }
-      if(i<(proj.keywords||[]).length-1)await new Promise(r=>setTimeout(r,200));
+      setCheckProgress({done:i+1,total});
+      if(i<total-1)await new Promise(r=>setTimeout(r,200));
     }
     const updated=(projects||[]).map(p=>p.id!==activeProject?p:{...p,keywords:updatedKeywords});
     setProjects(updated);
@@ -523,7 +526,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                 <select value={sortKw} onChange={e=>setSortKw(e.target.value)} style={{padding:"8px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",background:C.white,cursor:"pointer",color:C.navy}}><option value="pos_asc">Pozitie ▲</option><option value="pos_desc">Pozitie ▼</option><option value="volume_desc">Volum ▼</option><option value="volume_asc">Volum ▲</option><option value="alpha">Alfabetic</option></select>
-                <button onClick={checkNow} disabled={checking} style={{padding:"8px 16px",background:checking?C.grayMid:C.orangeLight,color:checking?C.grayText:C.orange,border:`1.5px solid ${checking?C.grayMid:C.orange}`,borderRadius:8,fontSize:13,fontWeight:600,cursor:checking?"not-allowed":"pointer"}}>{checking?"Se verifica...":"Verifica acum"}</button>
+                <button onClick={checkNow} disabled={checking} style={{padding:"8px 16px",background:checking?C.grayMid:C.orangeLight,color:checking?C.grayText:C.orange,border:`1.5px solid ${checking?C.grayMid:C.orange}`,borderRadius:8,fontSize:13,fontWeight:600,cursor:checking?"not-allowed":"pointer"}}>{checking?`Se verifică ${checkProgress.done}/${checkProgress.total}`:"Verifică acum"}</button>
                 <button onClick={updateAllVolumes} disabled={updatingVolumes} style={{padding:"8px 16px",background:updatingVolumes?C.grayMid:C.white,color:updatingVolumes?C.grayText:C.navy,border:`1.5px solid ${updatingVolumes?C.grayMid:C.border}`,borderRadius:8,fontSize:13,fontWeight:600,cursor:updatingVolumes?"not-allowed":"pointer"}}>{updatingVolumes?"Se actualizează...":"🔄 Actualizează volume"}</button>
                 <div style={{display:"flex",gap:4}}>{[["desktop","🖥 Desktop"],["mobile","📱 Mobil"]].map(([val,label])=><button key={val} onClick={()=>setActiveDevice(val)} style={{padding:"4px 10px",fontSize:12,borderRadius:6,border:`1.5px solid ${activeDevice===val?C.orange:C.border}`,cursor:"pointer",fontWeight:600,background:activeDevice===val?C.orangeLight:C.gray,color:activeDevice===val?C.orange:C.navy}}>{label}</button>)}</div>
               </div>
