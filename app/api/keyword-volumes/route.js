@@ -1,5 +1,5 @@
 export async function POST(request) {
-  const { keywords } = await request.json();
+  const { keywords, location_code, language_code } = await request.json();
   if (!keywords?.length) return Response.json({ volumes: {} });
 
   const credentials = Buffer.from(
@@ -12,7 +12,7 @@ export async function POST(request) {
       {
         method: 'POST',
         headers: { Authorization: `Basic ${credentials}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify([{ keywords, location_code: 2642, language_code: 'ro' }]),
+        body: JSON.stringify([{ keywords, location_code: location_code || 2642, language_code: language_code || 'ro' }]),
       }
     );
     const data = await res.json();

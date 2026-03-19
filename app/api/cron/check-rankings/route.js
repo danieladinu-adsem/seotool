@@ -25,7 +25,7 @@ export async function GET(request) {
   // Încarcă toate proiectele
   const { data: projects, error: projError } = await supabase
     .from('projects')
-    .select('id, url, auto_check');
+    .select('id, url, auto_check, location_code, se_domain');
 
   if (projError) {
     console.error('Cron: eroare la încărcarea proiectelor:', JSON.stringify(projError));
@@ -54,7 +54,7 @@ export async function GET(request) {
         const resD = await fetch(`${baseUrl}/api/rankings`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keyword: kw.keyword, url: project.url, device: 'desktop' }),
+          body: JSON.stringify({ keyword: kw.keyword, url: project.url, device: 'desktop', location_code: project.location_code||2642, se_domain: project.se_domain||'google.ro' }),
         });
         const dataD = await resD.json();
         const posDesktop = dataD.position ?? null;

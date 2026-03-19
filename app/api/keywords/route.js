@@ -1,5 +1,5 @@
 export async function POST(request) {
-  const { keywords } = await request.json();
+  const { keywords, location_code, language_code } = await request.json();
   const query = keywords[0].toLowerCase().trim();
 
   const credentials = Buffer.from(
@@ -17,8 +17,8 @@ export async function POST(request) {
       },
       body: JSON.stringify([{
         keywords: [query],
-        location_code: 2642,
-        language_code: 'ro',
+        location_code: location_code || 2642,
+        language_code: language_code || 'ro',
         limit: 200,
       }]),
     }

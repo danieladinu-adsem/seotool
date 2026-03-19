@@ -1,5 +1,5 @@
 export async function POST(request) {
-  const { keyword, url, location_code, device } = await request.json();
+  const { keyword, url, location_code, se_domain, device } = await request.json();
 
   const credentials = Buffer.from(
     `${process.env.DATAFORSEO_LOGIN}:${process.env.DATAFORSEO_PASSWORD}`
@@ -16,6 +16,7 @@ export async function POST(request) {
       body: JSON.stringify([{
         keyword: keyword,
         location_code: location_code || 2642,
+        se_domain: se_domain || 'google.ro',
         language_code: 'ro',
         device: device === 'mobile' ? 'mobile' : 'desktop',
         os: device === 'mobile' ? 'android' : 'windows',
