@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { useState, useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 
 const C = {
   orange:"#FF6B2B", orangeLight:"#FFF0EA", orangeMid:"#FF8C55",
@@ -460,7 +461,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
         console.error('checkNow error pentru',kw.keyword,e.message);
         updatedKeywords.push(kw);
       }
-      setCheckProgress({done:i+1,total});
+      flushSync(()=>setCheckProgress({done:i+1,total}));
       if(i<total-1)await new Promise(r=>setTimeout(r,200));
     }
     const updated=(projects||[]).map(p=>p.id!==activeProject?p:{...p,keywords:updatedKeywords});
