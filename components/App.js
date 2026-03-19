@@ -344,7 +344,7 @@ function BlogTopics(){const[query,setQuery]=useState("");const[results,setResult
 function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initialProjectId,userId}){
   const[isMobile,setIsMobile]=useState(typeof window!=="undefined"&&window.innerWidth<768);
   useEffect(()=>{const fn=()=>setIsMobile(window.innerWidth<768);window.addEventListener("resize",fn);return()=>window.removeEventListener("resize",fn);},[]);
-  const[projects,setProjects]=useState(null);const[loading,setLoading]=useState(true);const[activeProject,setActiveProject]=useState(initialProjectId||null);const[showNewProject,setShowNewProject]=useState(false);const[newProjectName,setNewProjectName]=useState("");const[newProjectUrl,setNewProjectUrl]=useState("");const[newKw,setNewKw]=useState("");const[activeDevice,setActiveDevice]=useState("desktop");const[showAddKw,setShowAddKw]=useState(false);const[showBulkAdd,setShowBulkAdd]=useState(false);const[bulkText,setBulkText]=useState("");const[sortKw,setSortKw]=useState("volume_desc");const[checking,setChecking]=useState(false);const[checkingKwIds,setCheckingKwIds]=useState(new Set());const[updatingVolumes,setUpdatingVolumes]=useState(false);const[showDeleteConfirm,setShowDeleteConfirm]=useState(false);const[deleting,setDeleting]=useState(false);
+  const[projects,setProjects]=useState(null);const[loading,setLoading]=useState(true);const[activeProject,setActiveProject]=useState(initialProjectId||null);const[showNewProject,setShowNewProject]=useState(false);const[newProjectName,setNewProjectName]=useState("");const[newProjectUrl,setNewProjectUrl]=useState("");const[newKw,setNewKw]=useState("");const[newDevice,setNewDevice]=useState("desktop");const[activeDevice,setActiveDevice]=useState("desktop");const[showAddKw,setShowAddKw]=useState(false);const[showBulkAdd,setShowBulkAdd]=useState(false);const[bulkText,setBulkText]=useState("");const[sortKw,setSortKw]=useState("volume_desc");const[checking,setChecking]=useState(false);const[checkingKwIds,setCheckingKwIds]=useState(new Set());const[updatingVolumes,setUpdatingVolumes]=useState(false);const[showDeleteConfirm,setShowDeleteConfirm]=useState(false);const[deleting,setDeleting]=useState(false);
   useEffect(()=>{loadProjects(userId).then(p=>{const ps=p||[];setProjects(ps);if(initialProjectId)setActiveProject(initialProjectId);else if(ps.length>0)setActiveProject(ps[0].id);setLoading(false);onProjectsLoaded&&onProjectsLoaded(ps);}).catch(()=>{setProjects([]);setLoading(false);});},[userId]);
   useEffect(()=>{if(initialProjectId)setActiveProject(initialProjectId);},[initialProjectId]);
   useEffect(()=>{if(pendingKeywords&&pendingKeywords.length>0&&projects&&projects.length>0){addKeywordsToProject(activeProject||projects[0].id,pendingKeywords);onPendingConsumed();}},[pendingKeywords,projects]);
@@ -355,17 +355,22 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
     try{
       const res=await fetch('/api/keyword-volumes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keywords:kwList.map(k=>k.keyword)})});
       const{volumes}=await res.json();
-      const updated=(projects||[]).map(p=>{
-        if(p.id!==projId)return p;
-        const newKws=p.keywords.map(k=>{
-          const vol=volumes[k.keyword.toLowerCase()];
-          return vol!=null?{...k,volume:vol}:k;
+      let savedUpdated=null;
+      setProjects(prev=>{
+        const updated=(prev||[]).map(p=>{
+          if(p.id!==projId)return p;
+          const newKws=p.keywords.map(k=>{
+            const vol=volumes[k.keyword.toLowerCase()];
+            return vol!=null?{...k,volume:vol}:k;
+          });
+          return{...p,keywords:newKws};
         });
-        return{...p,keywords:newKws};
+        savedUpdated=updated;
+        return updated;
       });
-      setProjects(updated);
-      saveProjects(updated,userId);
-      onProjectsLoaded&&onProjectsLoaded(updated);
+      setTimeout(()=>{
+        if(savedUpdated){saveProjects(savedUpdated,userId);onProjectsLoaded&&onProjectsLoaded(savedUpdated);}
+      },0);
       if(supabase){
         for(const kw of kwList){
           const vol=volumes[kw.keyword.toLowerCase()];
