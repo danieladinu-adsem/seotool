@@ -7,8 +7,12 @@ const supabase = createClient(
 
 export async function GET(request) {
   const headerSecret = request.headers.get('x-cron-secret');
+  const authHeader = request.headers.get('authorization');
+  const bearerSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
   const urlSecret = new URL(request.url).searchParams.get('secret');
-  if (headerSecret !== process.env.CRON_SECRET && urlSecret !== process.env.CRON_SECRET) {
+  const secret = process.env.CRON_SECRET;
+  if (headerSecret !== secret && bearerSecret !== secret && urlSecret !== secret) {
+    console.error('[cron] Unauthorized. Headers received:', Object.fromEntries(request.headers));
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
