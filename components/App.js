@@ -458,7 +458,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
         console.error('checkNow error pentru',kw.keyword,e.message);
         updatedKeywords.push(kw);
       }
-      if(i<(proj.keywords||[]).length-1)await new Promise(r=>setTimeout(r,500));
+      if(i<(proj.keywords||[]).length-1)await new Promise(r=>setTimeout(r,200));
     }
     const updated=(projects||[]).map(p=>p.id!==activeProject?p:{...p,keywords:updatedKeywords});
     setProjects(updated);
