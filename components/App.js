@@ -987,7 +987,7 @@ const MONTHS_FULL = ["Ianuarie","Februarie","Martie","Aprilie","Mai","Iunie","Iu
 const DEFAULT_SECTIONS = [
   { id:"summary",   label:"Sumar executiv",            icon:"📋", enabled:true,  order:0 },
   { id:"positions", label:"Pozitii & Volume keywords", icon:"📍", enabled:true,  order:1 },
-  { id:"notes",     label:"Note & recomandari",        icon:"📝", enabled:false, order:2 },
+  { id:"notes",     label:"Note & recomandari",        icon:"📝", enabled:true,  order:2 },
 ];
 
 function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
@@ -1178,7 +1178,8 @@ function RaportSEO({ projects }) {
   const [p2Year, setP2Year] = useState(prevMonth.getFullYear());
   const [sections, setSections] = useState(DEFAULT_SECTIONS);
   const reportTitle = "Raport SEO";
-  const [summaryText, setSummaryText] = useState("");
+  const DEFAULT_SUMMARY = `• Pagini web optimizate SEO\n\n• Articole externe\n\n• Articole de blog\n`;
+  const [summaryText, setSummaryText] = useState(DEFAULT_SUMMARY);
   const maxKeywords = 999;
   const [localProjects, setLocalProjects] = useState(projects);
   useEffect(()=>setLocalProjects(projects),[projects]);
