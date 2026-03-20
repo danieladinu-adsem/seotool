@@ -112,7 +112,7 @@ async function loadProjects(userId) {
     const result = await Promise.all(projects.map(async project => {
       const { data: kwData, error: kwError } = await supabase
         .from('keywords')
-        .select('id, keyword, position, position_desktop, position_mobile, url, volume')
+        .select('id, keyword, position, position_desktop, position_mobile, url, volume, initial_position')
         .eq('project_id', project.id);
       if (kwError) {
         console.log('Supabase error details:', JSON.stringify(kwError));
@@ -196,6 +196,7 @@ async function saveProjects(projects, userId) {
           position_mobile: kw.position_mobile ?? null,
           url: kw.url || '',
           volume: kw.volume || 0,
+          initial_position: kw.initial_position ?? null,
         };
         console.log('[saveProjects] upsert keyword:', kw.keyword, 'id:', kwRow.id);
         const { error: kwError } = await supabase
@@ -990,8 +991,9 @@ const DEFAULT_SECTIONS = [
   { id:"notes",     label:"Note & recomandari",        icon:"📝", enabled:false, order:3 },
 ];
 
-function ReportPreview({ config, project, p1Label, p2Label }) {
+function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
   if (!project) return null;
+  const [editingInitPos, setEditingInitPos] = useState(null); // {kwId, val}
   const kws = project.keywords || [];
   const getPosNow = k => k.position_desktop ?? k.position;
   const getPosPrev = (k, field='position') => {
@@ -1027,8 +1029,7 @@ function ReportPreview({ config, project, p1Label, p2Label }) {
     ...k,
     curPos:posNow[i],
     prevPos:posPrev[i],
-    prevPosDesktop:getPosPrev(k,'position_desktop'),
-    prevPosMobile:getPosPrev(k,'position_mobile'),
+    prevPosDesktop:k.initial_position||(k.history&&k.history.length>0?k.history[0].position:null),
     delta:(posPrev[i]&&posNow[i])?(posPrev[i]-posNow[i]):null
   })).sort((a,b)=>b.delta-a.delta);
   const improved = movers.filter(m=>m.delta!=null&&m.delta>=5).slice(0,5);
@@ -1113,7 +1114,7 @@ function ReportPreview({ config, project, p1Label, p2Label }) {
               <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead><tr style={{background:C.gray}}>
-                    {["Keyword","🖥 Desktop","Poz. ant. Desktop","Volum lunar","Trend","Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
+                    {["Keyword","🖥 Desktop","Poziție inițială","Volum lunar","Trend","Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
                   </tr></thead>
                   <tbody>{[...movers].sort((a,b)=>(b.volume||0)-(a.volume||0)).slice(0,config.maxKeywords||999).map((kw,i)=>{
                     const allPos=(kw.history||[]).map(h=>h.position).filter(p=>p>0);
@@ -1122,7 +1123,15 @@ function ReportPreview({ config, project, p1Label, p2Label }) {
                       <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
                         <td style={{padding:"10px 14px",fontWeight:500,fontSize:13,color:C.navy}}>{kw.keyword}</td>
                         <td style={{padding:"10px 14px"}}><PositionBadge pos={kw.position_desktop}/></td>
-                        <td style={{padding:"10px 14px"}}>{kw.prevPosDesktop?<PositionBadge pos={kw.prevPosDesktop}/>:<span style={{color:C.grayText,fontSize:12}}>—</span>}</td>
+                        <td style={{padding:"10px 14px",cursor:"pointer"}} title="Click pentru a edita">
+                          {editingInitPos?.kwId===kw.id
+                            ? <input autoFocus type="number" min="1" max="100" value={editingInitPos.val} onChange={e=>setEditingInitPos({kwId:kw.id,val:e.target.value})}
+                                onBlur={async()=>{const v=parseInt(editingInitPos.val);if(v>0){if(supabase)await supabase.from('keywords').update({initial_position:v}).eq('id',String(kw.id));if(onKeywordUpdate)onKeywordUpdate(kw.id,v);}setEditingInitPos(null);}}
+                                onKeyDown={async e=>{if(e.key==='Enter'){const v=parseInt(editingInitPos.val);if(v>0){if(supabase)await supabase.from('keywords').update({initial_position:v}).eq('id',String(kw.id));if(onKeywordUpdate)onKeywordUpdate(kw.id,v);}setEditingInitPos(null);}if(e.key==='Escape')setEditingInitPos(null);}}
+                                style={{width:60,padding:"3px 6px",border:`1.5px solid ${C.orange}`,borderRadius:6,fontSize:13,outline:"none",textAlign:"center"}}/>
+                            : <span onClick={()=>setEditingInitPos({kwId:kw.id,val:kw.prevPosDesktop||''})}>{kw.prevPosDesktop?<PositionBadge pos={kw.prevPosDesktop}/>:<span style={{color:C.grayMid,fontSize:12}}>✏️ adaugă</span>}</span>
+                          }
+                        </td>
                         <td style={{padding:"10px 14px",fontSize:12,fontWeight:600,color:C.grayDark}}>{kw.volume>0?fmtN(kw.volume):"—"}</td>
                         <td style={{padding:"10px 14px"}}><EvolutionMini history={kw.history}/></td>
                         <td style={{padding:"10px 14px",fontSize:12,color:C.green,fontWeight:700}}>{best?`#${best}`:"—"}</td>
@@ -1202,6 +1211,11 @@ function RaportSEO({ projects }) {
   const reportTitle = "Raport SEO";
   const [summaryText, setSummaryText] = useState("");
   const maxKeywords = 999;
+  const [localProjects, setLocalProjects] = useState(projects);
+  useEffect(()=>setLocalProjects(projects),[projects]);
+  const handleKeywordUpdate = (kwId, initialPos) => {
+    setLocalProjects(prev=>(prev||[]).map(p=>({...p,keywords:(p.keywords||[]).map(k=>k.id===kwId?{...k,initial_position:initialPos}:k)})));
+  };
   const [mailTab, setMailTab] = useState("manual");
   const [mailTo, setMailTo] = useState("");
   const [mailSubject, setMailSubject] = useState("Raport SEO lunar");
@@ -1215,7 +1229,7 @@ function RaportSEO({ projects }) {
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const reportRef = useRef(null);
 
-  const project = projects?.find(p=>p.id===selectedProjId);
+  const project = (localProjects||projects)?.find(p=>p.id===selectedProjId);
   const p1Label = `${MONTHS_FULL[p1Month]} ${p1Year}`;
   const p2Label = `${MONTHS_FULL[p2Month]} ${p2Year}`;
   const config = { sections, reportTitle, summaryText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords, p2Month, p2Year };
@@ -1476,7 +1490,7 @@ function RaportSEO({ projects }) {
             <EmptyState icon="📂" title="Selectează un proiect în configurare"/>
           ) : (
             <div>
-              <ReportPreview config={config} project={project} p1Label={p1Label} p2Label={p2Label}/>
+              <ReportPreview config={config} project={project} p1Label={p1Label} p2Label={p2Label} onKeywordUpdate={handleKeywordUpdate}/>
             </div>
           )}
         </div>
@@ -1484,7 +1498,7 @@ function RaportSEO({ projects }) {
 
       {/* Div ascuns — reportRef mereu populat pentru generare HTML email */}
       <div ref={reportRef} style={{position:"absolute",left:"-9999px",top:0,width:900,visibility:"hidden",pointerEvents:"none"}} aria-hidden="true">
-        {project && <ReportPreview config={config} project={project} p1Label={p1Label} p2Label={p2Label}/>}
+        {project && <ReportPreview config={config} project={project} p1Label={p1Label} p2Label={p2Label} onKeywordUpdate={handleKeywordUpdate}/>}
       </div>
     </div>
   );
