@@ -4,5 +4,10 @@
       "path": "/api/cron/check-rankings",
       "schedule": "0 6 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "app/api/cron/check-rankings/route.js": {
+      "maxDuration": 300
+    }
+  }
 }
