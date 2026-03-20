@@ -11,6 +11,8 @@ const C = {
   red:"#DC2626", redLight:"#FEE2E2",
 };
 
+const linkify = text => text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" style="color:#FF6B2B;word-break:break-all;" target="_blank">$1</a>').replace(/\n/g,'<br>');
+
 const MONTHS = ["Ian","Feb","Mar","Apr","Mai","Iun","Iul","Aug","Sep","Oct","Nov","Dec"];
 const COUNTRIES = [
   {name:"România",    location_code:2642, se_domain:"google.ro",     language_code:"ro"},
@@ -1098,9 +1100,7 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
                 ))}
               </div>
               {config.summaryText && (
-                <div style={{background:`${accentColor}0f`,border:`1px solid ${accentColor}30`,borderRadius:10,padding:"14px 16px",fontSize:13,color:C.grayDark,lineHeight:1.6,whiteSpace:"pre-wrap"}}>
-                  {config.summaryText}
-                </div>
+                <div style={{background:`${accentColor}0f`,border:`1px solid ${accentColor}30`,borderRadius:10,padding:"14px 16px",fontSize:13,color:C.grayDark,lineHeight:1.6}} dangerouslySetInnerHTML={{__html:linkify(config.summaryText)}}/>
               )}
             </div>
           );
