@@ -987,8 +987,7 @@ const MONTHS_FULL = ["Ianuarie","Februarie","Martie","Aprilie","Mai","Iunie","Iu
 const DEFAULT_SECTIONS = [
   { id:"summary",   label:"Sumar executiv",            icon:"📋", enabled:true,  order:0 },
   { id:"positions", label:"Pozitii & Volume keywords", icon:"📍", enabled:true,  order:1 },
-  { id:"topmovers", label:"Top movers",                icon:"🏆", enabled:true,  order:2 },
-  { id:"notes",     label:"Note & recomandari",        icon:"📝", enabled:false, order:3 },
+  { id:"notes",     label:"Note & recomandari",        icon:"📝", enabled:false, order:2 },
 ];
 
 function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
@@ -1144,37 +1143,6 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
             </div>
           );
 
-          if (sec.id==="topmovers") return (
-            <div key="topmovers" style={{marginBottom:28}}>
-              <h2 style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-                <span style={{color:accentColor}}>🏆</span> Top movers
-              </h2>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-                <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
-                  <div style={{background:C.greenLight,padding:"10px 14px",fontWeight:600,fontSize:12,color:C.green}}>📈 Cele mai mari urcari</div>
-                  <table style={{width:"100%",borderCollapse:"collapse"}}>
-                    <tbody>{improved.length?improved.map((m,i)=>(
-                      <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
-                        <td style={{padding:"9px 14px",fontSize:12,fontWeight:500,color:C.navy}}>{m.keyword}</td>
-                        <td style={{padding:"9px 14px",textAlign:"right"}}><span style={{fontSize:12,fontWeight:700,color:C.green}}>▲ +{m.delta} poz.</span></td>
-                      </tr>
-                    )):<tr><td style={{padding:"12px 14px",fontSize:12,color:C.grayText}}>Nicio urcare semnificativa</td></tr>}</tbody>
-                  </table>
-                </div>
-                <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
-                  <div style={{background:C.redLight,padding:"10px 14px",fontWeight:600,fontSize:12,color:C.red}}>📉 Cele mai mari scaderi</div>
-                  <table style={{width:"100%",borderCollapse:"collapse"}}>
-                    <tbody>{declined.length?declined.map((m,i)=>(
-                      <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
-                        <td style={{padding:"9px 14px",fontSize:12,fontWeight:500,color:C.navy}}>{m.keyword}</td>
-                        <td style={{padding:"9px 14px",textAlign:"right"}}><span style={{fontSize:12,fontWeight:700,color:C.red}}>▼ {m.delta} poz.</span></td>
-                      </tr>
-                    )):<tr><td style={{padding:"12px 14px",fontSize:12,color:C.grayText}}>Nicio scadere semnificativa</td></tr>}</tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          );
 
           if (sec.id==="notes") return config.notesText ? (
             <div key="notes" style={{marginBottom:28}}>
