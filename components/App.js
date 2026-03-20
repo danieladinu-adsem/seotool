@@ -1098,7 +1098,7 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
                 ))}
               </div>
               {config.summaryText && (
-                <div style={{background:`${accentColor}0f`,border:`1px solid ${accentColor}30`,borderRadius:10,padding:"14px 16px",fontSize:13,color:C.grayDark,lineHeight:1.6}}>
+                <div style={{background:`${accentColor}0f`,border:`1px solid ${accentColor}30`,borderRadius:10,padding:"14px 16px",fontSize:13,color:C.grayDark,lineHeight:1.6,whiteSpace:"pre-wrap"}}>
                   {config.summaryText}
                 </div>
               )}
@@ -1336,9 +1336,9 @@ function RaportSEO({ projects }) {
               <div style={{fontWeight:700,fontSize:14,marginBottom:16,color:C.navy}}>✏️ Continut text</div>
               <div style={{marginBottom:14}}>
                 <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Text sumar executiv</label>
-                <textarea value={summaryText} onChange={e=>setSummaryText(e.target.value)} rows={3}
+                <textarea value={summaryText} onChange={e=>setSummaryText(e.target.value)} rows={10}
                   placeholder="Ex: În luna curentă, site-ul a înregistrat îmbunătățiri semnificative..."
-                  style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}
+                  style={{width:"100%",minHeight:200,padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}
                   onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
               </div>
             </div>
