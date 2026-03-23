@@ -1006,6 +1006,18 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
     const val = entries[entries.length-1][field];
     return val ?? null;
   };
+  // Poziția cea mai apropiată de ziua 1 a lunii p2
+  const getPosAroundFirst = k => {
+    const history = k.history || [];
+    if (!history.length) return null;
+    const target = new Date(config.p2Year, config.p2Month, 1).getTime();
+    const sorted = [...history].sort((a, b) => {
+      const da = Math.abs(new Date(a.date).getTime() - target);
+      const db = Math.abs(new Date(b.date).getTime() - target);
+      return da - db;
+    });
+    return sorted[0]?.position ?? null;
+  };
   const posNow = kws.map(k=>getPosNow(k));
   const posNowValid = posNow.filter(p=>p!=null&&p>0);
   const avgNow = posNowValid.length ? Math.round(posNowValid.reduce((a,b)=>a+b,0)/posNowValid.length) : 0;
@@ -1113,7 +1125,7 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
               <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead><tr style={{background:C.gray}}>
-                    {["Keyword","🖥 Desktop","Poziție inițială","Volum lunar","URL",...(config.showTrend?["Trend"]:[]),"Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
+                    {["Keyword","🖥 Desktop","Poz. anterioară","Poziție inițială","Volum lunar","URL",...(config.showTrend?["Trend"]:[]),"Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
                   </tr></thead>
                   <tbody>{[...movers].sort((a,b)=>(b.volume||0)-(a.volume||0)).slice(0,config.maxKeywords||999).map((kw,i)=>{
                     const allPos=(kw.history||[]).map(h=>h.position).filter(p=>p>0);
@@ -1122,6 +1134,7 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
                       <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
                         <td style={{padding:"10px 14px",fontWeight:500,fontSize:13,color:C.navy}}>{kw.keyword}</td>
                         <td style={{padding:"10px 14px"}}><PositionBadge pos={kw.position_desktop}/></td>
+                        <td style={{padding:"10px 14px"}}>{(()=>{const p=getPosAroundFirst(kw);return p?<PositionBadge pos={p}/>:<span style={{color:C.grayMid,fontSize:12}}>—</span>;})()}</td>
                         <td style={{padding:"10px 14px",cursor:"pointer"}} title="Click pentru a edita">
                           {editingInitPos?.kwId===kw.id
                             ? <input autoFocus type="number" min="1" max="100" value={editingInitPos.val} onChange={e=>setEditingInitPos({kwId:kw.id,val:e.target.value})}
