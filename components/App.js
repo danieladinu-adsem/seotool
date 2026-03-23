@@ -1475,6 +1475,65 @@ function RaportSEO({ projects }) {
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
+function GoogleUpdates() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch('/api/google-updates')
+      .then(r => r.json())
+      .then(data => { setItems(data.items || []); setLoading(false); })
+      .catch(() => { setError('Nu s-au putut încărca știrile.'); setLoading(false); });
+  }, []);
+
+  const fmtDate = (str) => {
+    if (!str) return '';
+    const d = new Date(str);
+    if (isNaN(d)) return str;
+    return d.toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  return (
+    <div style={{maxWidth:860,margin:"0 auto",padding:"0 0 40px"}}>
+      <div style={{marginBottom:24}}>
+        <h2 style={{fontSize:22,fontWeight:700,color:C.navy,margin:0}}>🔔 Updates Algoritm Google</h2>
+        <div style={{fontSize:13,color:C.grayText,marginTop:4}}>Știri filtrate despre actualizările algoritmului Google — Search Engine Land & SE Roundtable</div>
+      </div>
+      {loading && <div style={{textAlign:"center",padding:60,color:C.grayText,fontSize:14}}>Se încarcă știrile...</div>}
+      {error && <div style={{textAlign:"center",padding:40,color:"#ef4444",fontSize:14}}>{error}</div>}
+      {!loading && !error && items.length === 0 && (
+        <div style={{textAlign:"center",padding:60,color:C.grayText,fontSize:14}}>Nu există știri recente despre actualizările algoritmului.</div>
+      )}
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        {items.map((item, i) => (
+          <div key={i} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:"18px 20px",transition:"box-shadow 0.15s"}}
+            onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.08)"}
+            onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:8}}>
+              <a href={item.link} target="_blank" rel="noopener noreferrer"
+                style={{fontSize:15,fontWeight:600,color:C.navy,textDecoration:"none",lineHeight:1.4,flex:1}}
+                onMouseEnter={e=>e.target.style.color=C.orange}
+                onMouseLeave={e=>e.target.style.color=C.navy}>
+                {item.title}
+              </a>
+              <span style={{fontSize:11,color:C.grayText,whiteSpace:"nowrap",marginTop:2}}>{fmtDate(item.pubDate)}</span>
+            </div>
+            {item.description && (
+              <div style={{fontSize:13,color:C.grayText,lineHeight:1.6,marginBottom:10}}>{item.description}{item.description.length >= 300 ? '...' : ''}</div>
+            )}
+            <a href={item.link} target="_blank" rel="noopener noreferrer"
+              style={{fontSize:12,color:C.orange,fontWeight:500,textDecoration:"none"}}>
+              Citește articolul →
+            </a>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [page, setPage] = useState("projects");
   const [pendingKeywords, setPendingKeywords] = useState([]);
@@ -1509,6 +1568,7 @@ export default function App() {
     { id:"blog",     icon:"✍️", label:"Blog Topic Finder" },
     { id:"forecast", icon:"🔮", label:"SEO Forecasting" },
     { id:"report",   icon:"📑", label:"Raportare" },
+    { id:"updates",  icon:"🔔", label:"Updates Google" },
   ];
 
   const renderPage = () => {
@@ -1518,6 +1578,7 @@ export default function App() {
     if (page==="rank")     return <RankTracker pendingKeywords={pendingKeywords} onPendingConsumed={()=>setPendingKeywords([])} onProjectsLoaded={setTrackerProjects} initialProjectId={selectedProjectId} userId={loggedUser}/>;
     if (page==="forecast") return <Forecasting/>;
     if (page==="report")   return <RaportSEO projects={trackerProjects}/>;
+    if (page==="updates")  return <GoogleUpdates/>;
     return null;
   };
 
