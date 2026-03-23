@@ -1,9 +1,15 @@
 {
   "crons": [
-    {
-      "path": "/api/cron/check-rankings",
-      "schedule": "0 6 * * *"
-    }
+    {"path": "/api/cron/check-rankings", "schedule": "0 6 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "5 6 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "10 6 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "15 6 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "20 6 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "25 6 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "30 6 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "35 6 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "40 6 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "45 6 * * *"}
   ],
   "functions": {
     "app/api/cron/check-rankings/route.js": {

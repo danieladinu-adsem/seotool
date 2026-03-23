@@ -5,7 +5,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-const BATCH_SIZE = 30;
+const BATCH_SIZE = 200; // procesăm cât putem în 50s, time guard oprește înainte de timeout
 
 export async function GET(request) {
   const headerSecret = request.headers.get('x-cron-secret');
@@ -63,8 +63,14 @@ export async function GET(request) {
   const isDone = nextOffset >= totalTasks;
 
   const results = { updated: 0, errors: 0, details: [], offset: currentOffset, total: totalTasks, batch: batch.length };
+  const startTime = Date.now();
+  const MAX_MS = 50000; // stop after 50s to avoid timeout
 
   for (const { kw, project } of batch) {
+    if (Date.now() - startTime > MAX_MS) {
+      results.details.push({ status: 'timeout_guard', message: 'Stopped to avoid timeout' });
+      break;
+    }
     try {
       const resD = await fetch(`${baseUrl}/api/rankings`, {
         method: 'POST',
