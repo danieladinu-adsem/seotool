@@ -1113,7 +1113,7 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
               <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead><tr style={{background:C.gray}}>
-                    {["Keyword","🖥 Desktop","Poziție inițială","Volum lunar","URL","Trend","Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
+                    {["Keyword","🖥 Desktop","Poziție inițială","Volum lunar","URL",...(config.showTrend?["Trend"]:[]),"Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
                   </tr></thead>
                   <tbody>{[...movers].sort((a,b)=>(b.volume||0)-(a.volume||0)).slice(0,config.maxKeywords||999).map((kw,i)=>{
                     const allPos=(kw.history||[]).map(h=>h.position).filter(p=>p>0);
@@ -1133,7 +1133,7 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
                         </td>
                         <td style={{padding:"10px 14px",fontSize:12,fontWeight:600,color:C.grayDark}}>{kw.volume>0?fmtN(kw.volume):"—"}</td>
                         <td style={{padding:"10px 14px",fontSize:11,color:C.orange,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{kw.url?<a href={kw.url} target="_blank" rel="noreferrer" style={{color:C.orange,textDecoration:"none"}} title={kw.url}>{kw.url.replace(/^https?:\/\/(www\.)?/,'')}</a>:"—"}</td>
-                        <td style={{padding:"10px 14px"}}><EvolutionMini history={kw.history}/></td>
+                        {config.showTrend&&<td style={{padding:"10px 14px"}}><EvolutionMini history={kw.history}/></td>}
                         <td style={{padding:"10px 14px",fontSize:12,color:C.green,fontWeight:700}}>{best?`#${best}`:"—"}</td>
                       </tr>
                     );
@@ -1181,6 +1181,7 @@ function RaportSEO({ projects }) {
   const DEFAULT_SUMMARY = `• Pagini web optimizate SEO\n\n• Articole externe\n\n• Articole de blog\n`;
   const [summaryText, setSummaryText] = useState(DEFAULT_SUMMARY);
   const maxKeywords = 999;
+  const [showTrend, setShowTrend] = useState(true);
   const [localProjects, setLocalProjects] = useState(projects);
   useEffect(()=>setLocalProjects(projects),[projects]);
   const handleKeywordUpdate = (kwId, initialPos) => {
@@ -1202,7 +1203,7 @@ function RaportSEO({ projects }) {
   const project = (localProjects||projects)?.find(p=>p.id===selectedProjId);
   const p1Label = `${MONTHS_FULL[p1Month]} ${p1Year}`;
   const p2Label = `${MONTHS_FULL[p2Month]} ${p2Year}`;
-  const config = { sections, reportTitle, summaryText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords, p2Month, p2Year };
+  const config = { sections, reportTitle, summaryText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords, p2Month, p2Year, showTrend };
 
 
   const sortedSections = [...sections].sort((a,b)=>a.order-b.order);
@@ -1365,6 +1366,15 @@ function RaportSEO({ projects }) {
               </div>
             </div>
 
+
+            <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:20}}>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:14,color:C.navy}}>📊 Coloane tabel keywords</div>
+              <div style={{display:"flex",alignItems:"center",gap:10,background:showTrend?`${accentColor}0a`:C.gray,border:`1.5px solid ${showTrend?accentColor:C.border}`,borderRadius:9,padding:"10px 12px"}}>
+                <input type="checkbox" checked={showTrend} onChange={()=>setShowTrend(v=>!v)} style={{accentColor}}/>
+                <span style={{fontSize:16}}>📈</span>
+                <span style={{flex:1,fontSize:13,fontWeight:500,color:showTrend?C.navy:C.grayText}}>Trend (grafic evoluție)</span>
+              </div>
+            </div>
 
             <div style={{background:C.white,borderRadius:12,border:`1px solid ${C.border}`,padding:20}}>
               <div style={{fontWeight:700,fontSize:14,marginBottom:14,color:C.navy}}>📧 Trimitere raport pe email</div>
