@@ -1,9 +1,26 @@
-const KEYWORDS = ['algorithm', 'core update', 'spam update', 'helpful content', 'google update', 'ranking', 'penalty', 'search update'];
+const KEYWORDS = [
+  'google', 'search', 'seo', 'algorithm', 'ranking', 'serp',
+  'core update', 'spam update', 'helpful content', 'search update',
+  'penalty', 'crawl', 'index', 'schema', 'ai overview',
+  'search console', 'analytics', 'backlink', 'content',
+];
 
 const FEEDS = [
   'https://searchengineland.com/feed',
   'https://www.seroundtable.com/feed',
 ];
+
+function decodeHtml(str) {
+  return str
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
 
 function parseItems(xml) {
   const items = [];
@@ -15,10 +32,10 @@ function parseItems(xml) {
       const m = block.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\/${tag}>|<${tag}[^>]*>([^<]*)<\/${tag}>`));
       return m ? (m[1] || m[2] || '').trim() : '';
     };
-    const title = get('title');
+    const title = decodeHtml(get('title'));
     const link = get('link') || block.match(/<link>([^<]+)<\/link>/)?.[1]?.trim() || '';
     const pubDate = get('pubDate');
-    const description = get('description').replace(/<[^>]+>/g, '').slice(0, 300);
+    const description = decodeHtml(get('description').replace(/<[^>]+>/g, '')).slice(0, 300);
     items.push({ title, link, pubDate, description });
   }
   return items;
@@ -37,7 +54,7 @@ export async function GET() {
       }
     }
 
-    // Filtrează după keywords relevante
+    // Filtrează: cel puțin un keyword relevant în titlu sau descriere
     const filtered = allItems.filter(item => {
       const text = (item.title + ' ' + item.description).toLowerCase();
       return KEYWORDS.some(kw => text.includes(kw));
@@ -54,7 +71,7 @@ export async function GET() {
       return true;
     });
 
-    return Response.json({ items: unique.slice(0, 30) });
+    return Response.json({ items: unique.slice(0, 50) });
   } catch (e) {
     console.error('[google-updates] error:', e.message);
     return Response.json({ items: [] });
