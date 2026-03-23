@@ -5,6 +5,12 @@ const KEYWORDS = [
   'search console', 'analytics', 'backlink', 'content',
 ];
 
+const EXCLUDE_KEYWORDS = [
+  'google ads', 'paid search', 'paid media', 'ppc', ' ads ', 'adwords',
+  'advertising', 'paid campaign', 'display ads', 'shopping ads',
+  'performance max', 'smart bidding', 'ad spend', 'cpc', 'cpm',
+];
+
 const FEEDS = [
   'https://searchengineland.com/feed',
   'https://www.seroundtable.com/feed',
@@ -54,10 +60,12 @@ export async function GET() {
       }
     }
 
-    // Filtrează: cel puțin un keyword relevant în titlu sau descriere
+    // Filtrează: cel puțin un keyword relevant și niciun keyword exclus
     const filtered = allItems.filter(item => {
       const text = (item.title + ' ' + item.description).toLowerCase();
-      return KEYWORDS.some(kw => text.includes(kw));
+      const hasRelevant = KEYWORDS.some(kw => text.includes(kw));
+      const hasExcluded = EXCLUDE_KEYWORDS.some(kw => text.includes(kw));
+      return hasRelevant && !hasExcluded;
     });
 
     // Sortează după dată descrescător
