@@ -21,15 +21,22 @@
 
 html {
   zoom: 0.9;
-}
-
-html, body, #__next {
+  margin: 0;
+  padding: 0;
   height: 112%;
-  min-height: 112%;
+  overflow-x: hidden;
 }
 
 body {
+  margin: 0;
+  padding: 0;
+  height: 112%;
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
+}
+
+#__next {
+  min-height: 112%;
 }
