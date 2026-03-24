@@ -1632,7 +1632,7 @@ export default function App() {
   );
 
   return (
-    <div style={{display:"flex",height:"100vh",fontFamily:"Inter,'Segoe UI',sans-serif",background:C.gray,color:C.navy}}>
+    <div style={{display:"flex",minHeight:"112vh",fontFamily:"Inter,'Segoe UI',sans-serif",background:C.gray,color:C.navy}}>
       <style>{`
         @media (max-width: 768px) {
           table { display: block !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; }
