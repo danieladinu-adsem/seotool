@@ -1502,6 +1502,8 @@ function GoogleUpdates() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 10;
 
   useEffect(() => {
     setLoading(true);
@@ -1530,7 +1532,7 @@ function GoogleUpdates() {
         <div style={{textAlign:"center",padding:60,color:C.grayText,fontSize:14}}>Nu există știri recente despre actualizările algoritmului.</div>
       )}
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        {items.map((item, i) => (
+        {items.slice((page-1)*PER_PAGE, page*PER_PAGE).map((item, i) => (
           <div key={i} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:"18px 20px",transition:"box-shadow 0.15s"}}
             onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.08)"}
             onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
@@ -1553,6 +1555,21 @@ function GoogleUpdates() {
           </div>
         ))}
       </div>
+      {items.length > PER_PAGE && (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:16,marginTop:24}}>
+          <button onClick={()=>{setPage(p=>Math.max(1,p-1));window.scrollTo(0,0);}} disabled={page===1}
+            style={{padding:"8px 20px",borderRadius:8,border:`1.5px solid ${C.border}`,background:page===1?C.gray:C.white,color:page===1?C.grayMid:C.navy,fontWeight:600,fontSize:13,cursor:page===1?"default":"pointer"}}>
+            ← Înapoi
+          </button>
+          <span style={{fontSize:13,color:C.grayText,fontWeight:500}}>
+            Pagina {page} din {Math.ceil(items.length/PER_PAGE)}
+          </span>
+          <button onClick={()=>{setPage(p=>Math.min(Math.ceil(items.length/PER_PAGE),p+1));window.scrollTo(0,0);}} disabled={page===Math.ceil(items.length/PER_PAGE)}
+            style={{padding:"8px 20px",borderRadius:8,border:`1.5px solid ${C.border}`,background:page===Math.ceil(items.length/PER_PAGE)?C.gray:C.white,color:page===Math.ceil(items.length/PER_PAGE)?C.grayMid:C.navy,fontWeight:600,fontSize:13,cursor:page===Math.ceil(items.length/PER_PAGE)?"default":"pointer"}}>
+            Înainte →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
