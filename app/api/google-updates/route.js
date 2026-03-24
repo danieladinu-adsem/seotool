@@ -13,7 +13,11 @@ const EXCLUDE_KEYWORDS = [
 
 const FEEDS = [
   'https://searchengineland.com/feed',
+  'https://searchengineland.com/feed?paged=2',
+  'https://searchengineland.com/feed?paged=3',
   'https://www.seroundtable.com/feed',
+  'https://www.seroundtable.com/feed?paged=2',
+  'https://www.seroundtable.com/feed?paged=3',
 ];
 
 function decodeHtml(str) {
@@ -79,7 +83,7 @@ export async function GET() {
       return true;
     });
 
-    return Response.json({ items: unique.slice(0, 50) });
+    return Response.json({ items: unique.slice(0, 100) });
   } catch (e) {
     console.error('[google-updates] error:', e.message);
     return Response.json({ items: [] });
