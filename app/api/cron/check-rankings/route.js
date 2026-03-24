@@ -5,7 +5,40 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-const BATCH_SIZE = 200; // procesăm cât putem în 50s, time guard oprește înainte de timeout
+const DATAFORSEO_AUTH = () => Buffer.from(
+  `${process.env.DATAFORSEO_LOGIN}:${process.env.DATAFORSEO_PASSWORD}`
+).toString('base64');
+
+const normalize = u => (u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '').toLowerCase();
+
+async function getRanking(keyword, url, location_code, se_domain) {
+  try {
+    const res = await fetch('https://api.dataforseo.com/v3/serp/google/organic/live/advanced', {
+      method: 'POST',
+      headers: { Authorization: `Basic ${DATAFORSEO_AUTH()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify([{
+        keyword,
+        location_code: location_code || 2642,
+        language_code: 'ro',
+        se_domain: se_domain || 'google.ro',
+        device: 'desktop',
+        os: 'windows',
+        depth: 100,
+      }]),
+    });
+    const data = await res.json();
+    const items = data?.tasks?.[0]?.result?.[0]?.items || [];
+    const normUrl = normalize(url);
+    for (const item of items) {
+      if (item.type === 'organic' && normalize(item.url).includes(normUrl)) {
+        return item.rank_absolute ?? null;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(request) {
   const headerSecret = request.headers.get('x-cron-secret');
@@ -18,17 +51,14 @@ export async function GET(request) {
   }
 
   const today = new Date().toISOString().split('T')[0];
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
-    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
   // Citește offset-ul curent
   const { data: stateRow } = await supabase
     .from('cron_state')
-    .select('offset, last_date')
+    .select('"offset", last_date')
     .eq('id', 'check-rankings')
     .maybeSingle();
 
-  // Dacă e o zi nouă, resetează offset-ul
   const savedDate = stateRow?.last_date;
   const currentOffset = (savedDate === today) ? (stateRow?.offset || 0) : 0;
 
@@ -41,7 +71,7 @@ export async function GET(request) {
     return Response.json({ error: 'Failed to load projects', details: projError }, { status: 500 });
   }
 
-  // Aplatizează toate keywords active din toate proiectele
+  // Aplatizează toate keywords active
   const allTasks = [];
   for (const project of projects || []) {
     if (!project.url) continue;
@@ -58,56 +88,45 @@ export async function GET(request) {
   }
 
   const totalTasks = allTasks.length;
-  const batch = allTasks.slice(currentOffset, currentOffset + BATCH_SIZE);
-  const nextOffset = currentOffset + batch.length;
-  const isDone = nextOffset >= totalTasks;
-
+  const batch = allTasks.slice(currentOffset, currentOffset + 200);
   const results = { updated: 0, errors: 0, details: [], offset: currentOffset, total: totalTasks, batch: batch.length };
   const startTime = Date.now();
-  const MAX_MS = 50000; // stop after 50s to avoid timeout
+  const MAX_MS = 250000; // 4 minute (maxDuration e 300s)
 
   for (const { kw, project } of batch) {
     if (Date.now() - startTime > MAX_MS) {
-      results.details.push({ status: 'timeout_guard', message: 'Stopped to avoid timeout' });
+      results.details.push({ status: 'timeout_guard', processed: results.updated + results.errors });
       break;
     }
     try {
-      const resD = await fetch(`${baseUrl}/api/rankings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          keyword: kw.keyword,
-          url: project.url,
-          device: 'desktop',
-          location_code: project.location_code || 2642,
-          se_domain: project.se_domain || 'google.ro',
-        }),
-      });
-      const dataD = await resD.json();
-      const posDesktop = dataD.position ?? null;
+      const pos = await getRanking(kw.keyword, project.url, project.location_code, project.se_domain);
 
       await supabase
         .from('keywords')
-        .update({ position_desktop: posDesktop, position: posDesktop })
+        .update({ position_desktop: pos, position: pos })
         .eq('id', kw.id);
 
-      if (posDesktop != null) {
+      if (pos != null) {
         await supabase.from('keyword_history').upsert(
-          { keyword_id: kw.id, position: posDesktop, date: today },
+          { keyword_id: kw.id, position: pos, date: today },
           { onConflict: 'keyword_id,date' }
         );
       }
 
       results.updated++;
-      results.details.push({ keyword: kw.keyword, status: 'ok', posDesktop });
+      results.details.push({ keyword: kw.keyword, status: 'ok', pos });
     } catch (e) {
       results.errors++;
       results.details.push({ keyword: kw.keyword, status: 'error', error: e.message });
     }
   }
 
-  // Salvează noul offset (sau resetează dacă am terminat tot)
+  // Calculează noul offset
+  const processed = results.updated + results.errors;
+  const nextOffset = currentOffset + processed;
+  const isDone = nextOffset >= totalTasks;
   const newOffset = isDone ? 0 : nextOffset;
+
   await supabase
     .from('cron_state')
     .upsert({ id: 'check-rankings', offset: newOffset, last_date: today }, { onConflict: 'id' });
