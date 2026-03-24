@@ -1653,7 +1653,7 @@ export default function App() {
 
       {/* Sidebar */}
       {isMobile ? (
-        <div style={{position:"fixed",top:0,left:drawerOpen?0:-240,width:240,height:"100vh",background:C.navy,display:"flex",flexDirection:"column",flexShrink:0,zIndex:100,transition:"left 0.25s ease",boxShadow:drawerOpen?"4px 0 24px rgba(0,0,0,0.3)":"none"}}>
+        <div style={{position:"fixed",top:0,left:drawerOpen?0:-240,width:240,height:"112vh",background:C.navy,display:"flex",flexDirection:"column",flexShrink:0,zIndex:100,transition:"left 0.25s ease",boxShadow:drawerOpen?"4px 0 24px rgba(0,0,0,0.3)":"none"}}>
           {sidebarContent}
         </div>
       ) : (

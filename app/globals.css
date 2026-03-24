@@ -23,8 +23,9 @@ html {
   zoom: 0.9;
   margin: 0;
   padding: 0;
-  height: 112%;
+  min-height: 112%;
   overflow-x: hidden;
+  background: #F5F6FA;
 }
 
 body {
