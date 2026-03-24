@@ -52,16 +52,6 @@ export async function GET(request) {
 
   const today = new Date().toISOString().split('T')[0];
 
-  // Citește offset-ul curent
-  const { data: stateRow } = await supabase
-    .from('cron_state')
-    .select('"offset", last_date')
-    .eq('id', 'check-rankings')
-    .maybeSingle();
-
-  const savedDate = stateRow?.last_date;
-  const currentOffset = (savedDate === today) ? (stateRow?.offset || 0) : 0;
-
   // Încarcă toate proiectele active
   const { data: projects, error: projError } = await supabase
     .from('projects')
@@ -87,13 +77,30 @@ export async function GET(request) {
     }
   }
 
-  const totalTasks = allTasks.length;
-  const batch = allTasks.slice(currentOffset, currentOffset + 200);
-  const results = { updated: 0, errors: 0, details: [], offset: currentOffset, total: totalTasks, batch: batch.length };
-  const startTime = Date.now();
-  const MAX_MS = 250000; // 4 minute (maxDuration e 300s)
+  // Găsește keyword-urile deja verificate azi
+  const { data: todayHistory } = await supabase
+    .from('keyword_history')
+    .select('keyword_id')
+    .eq('date', today);
 
-  for (const { kw, project } of batch) {
+  const checkedIds = new Set((todayHistory || []).map(h => String(h.keyword_id)));
+
+  // Procesează DOAR keywords-urile care nu au fost încă verificate azi
+  const remaining = allTasks.filter(t => !checkedIds.has(String(t.kw.id)));
+
+  const results = {
+    updated: 0,
+    errors: 0,
+    skipped: checkedIds.size,
+    total: allTasks.length,
+    remaining: remaining.length,
+    details: [],
+  };
+
+  const startTime = Date.now();
+  const MAX_MS = 250000; // 4 minute
+
+  for (const { kw, project } of remaining) {
     if (Date.now() - startTime > MAX_MS) {
       results.details.push({ status: 'timeout_guard', processed: results.updated + results.errors });
       break;
@@ -121,16 +128,7 @@ export async function GET(request) {
     }
   }
 
-  // Calculează noul offset
-  const processed = results.updated + results.errors;
-  const nextOffset = currentOffset + processed;
-  const isDone = nextOffset >= totalTasks;
-  const newOffset = isDone ? 0 : nextOffset;
-
-  await supabase
-    .from('cron_state')
-    .upsert({ id: 'check-rankings', offset: newOffset, last_date: today }, { onConflict: 'id' });
-
-  console.log(`Cron: ${results.updated} ok, ${results.errors} erori, offset ${currentOffset}→${newOffset}/${totalTasks}`);
-  return Response.json({ success: true, date: today, isDone, ...results });
+  const allDone = checkedIds.size + results.updated >= allTasks.length;
+  console.log(`Cron: ${results.updated} procesate, ${checkedIds.size} deja ok, ${results.errors} erori, ${remaining.length - results.updated - results.errors} rămase`);
+  return Response.json({ success: true, date: today, allDone, ...results });
 }
