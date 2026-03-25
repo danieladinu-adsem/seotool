@@ -100,8 +100,9 @@ async function loadProjects(userId) {
     // 1. Încarcă proiectele userului
     const { data: projectsData, error: projError } = await supabase
       .from('projects')
-      .select('id, name, url, user_id, auto_check, location_code, se_domain, country')
-      .eq('user_id', userId);
+      .select('id, name, url, user_id, auto_check, location_code, se_domain, country, sort_order')
+      .eq('user_id', userId)
+      .order('sort_order', { ascending: true, nullsFirst: false });
     if (projError) {
       console.log('Supabase error details:', JSON.stringify(projError));
       throw projError;
@@ -551,7 +552,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
         ):(
           <div style={{width:200,flexShrink:0}}>
             <div style={{fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Proiecte</div>
-            {projects.map(p=><div key={p.id} onClick={()=>setActiveProject(p.id)} style={{padding:"10px 12px",borderRadius:8,cursor:"pointer",marginBottom:4,background:activeProject===p.id?C.orangeLight:"transparent",border:`1.5px solid ${activeProject===p.id?C.orange:"transparent"}`}}><div style={{fontWeight:600,fontSize:13,color:activeProject===p.id?C.orange:C.navy}}>{p.name}</div><div style={{fontSize:11,color:C.grayText,marginTop:2}}>{p.keywords.length} keywords</div></div>)}
+            {projects.map((p,i)=><div key={p.id} draggable onDragStart={e=>{e.dataTransfer.setData('text/plain',String(i));e.currentTarget.style.opacity='0.4';}} onDragEnd={e=>{e.currentTarget.style.opacity='1';}} onDragOver={e=>e.preventDefault()} onDrop={async e=>{e.preventDefault();const fromIdx=parseInt(e.dataTransfer.getData('text/plain'));const toIdx=i;if(fromIdx===toIdx)return;const reordered=[...projects];const[moved]=reordered.splice(fromIdx,1);reordered.splice(toIdx,0,moved);const updated=reordered.map((p,idx)=>({...p,sort_order:idx}));setProjects(updated);onProjectsLoaded&&onProjectsLoaded(updated);if(supabase){for(const p of updated){await supabase.from('projects').update({sort_order:p.sort_order}).eq('id',String(p.id));}}}} onClick={()=>setActiveProject(p.id)} style={{padding:"10px 12px",borderRadius:8,cursor:"grab",marginBottom:4,background:activeProject===p.id?C.orangeLight:"transparent",border:`1.5px solid ${activeProject===p.id?C.orange:"transparent"}`,userSelect:"none"}}><div style={{fontWeight:600,fontSize:13,color:activeProject===p.id?C.orange:C.navy}}>{p.name}</div><div style={{fontSize:11,color:C.grayText,marginTop:2}}>{p.keywords.length} keywords</div></div>)}
           </div>
         )}
         {proj&&<div style={{flex:1,minWidth:0}}>
