@@ -115,7 +115,7 @@ async function loadProjects(userId) {
     const result = await Promise.all(projects.map(async project => {
       const { data: kwData, error: kwError } = await supabase
         .from('keywords')
-        .select('id, keyword, position, position_desktop, position_mobile, position_override, url, volume, initial_position')
+        .select('id, keyword, position, position_desktop, position_mobile, position_override, url, volume, initial_position, report_overrides')
         .eq('project_id', project.id);
       if (kwError) {
         console.log('Supabase error details:', JSON.stringify(kwError));
@@ -1012,7 +1012,26 @@ const DEFAULT_SECTIONS = [
 
 function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
   if (!project) return null;
-  const [editingInitPos, setEditingInitPos] = useState(null); // {kwId, val}
+  const [editingCell, setEditingCell] = useState(null); // {kwId, field, val}
+  const saveOverride = async (kwId, field, val) => {
+    const kw = (project.keywords||[]).find(k=>k.id===kwId);
+    if (!kw) return;
+    const overrides = {...(kw.report_overrides||{}), [field]: val===''?undefined:val};
+    if (supabase) await supabase.from('keywords').update({report_overrides: overrides}).eq('id', String(kwId));
+    onKeywordUpdate&&onKeywordUpdate(kwId, {report_overrides: overrides});
+    setEditingCell(null);
+  };
+  const getVal = (kw, field, fallback) => {
+    const ov = kw.report_overrides?.[field];
+    return ov !== undefined ? ov : fallback;
+  };
+  const EditableCell = ({kwId, field, fallback, render, inputType='number', style={}}) => {
+    const kw = (project.keywords||[]).find(k=>k.id===kwId);
+    const val = getVal(kw, field, fallback);
+    const isEditing = editingCell?.kwId===kwId && editingCell?.field===field;
+    if (isEditing) return <input autoFocus type={inputType} defaultValue={editingCell.val} onBlur={e=>saveOverride(kwId,field,inputType==='number'?(e.target.value?parseInt(e.target.value):undefined):e.target.value)} onKeyDown={e=>{if(e.key==='Enter')saveOverride(kwId,field,inputType==='number'?(e.target.value?parseInt(e.target.value):undefined):e.target.value);if(e.key==='Escape')setEditingCell(null);}} style={{width:60,padding:"2px 6px",border:`1.5px solid ${C.orange}`,borderRadius:5,fontSize:12,textAlign:"center",outline:"none",...style}}/>;
+    return <span onClick={()=>setEditingCell({kwId,field,val:val??''})} style={{cursor:"pointer",borderBottom:`1px dashed ${C.grayMid}`,...style}} title="Click pentru a edita">{render(val)}</span>;
+  };
   const kws = project.keywords || [];
   const getPosNow = k => k.position_desktop ?? k.position;
   const getPosPrev = (k, field='position') => {
@@ -1150,22 +1169,14 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
                     const best=allPos.length?Math.min(...allPos):null;
                     return(
                       <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
-                        <td style={{padding:"10px 14px",fontWeight:500,fontSize:13,color:C.navy}}>{kw.keyword}</td>
-                        <td style={{padding:"10px 14px"}}><PositionBadge pos={kw.position_desktop}/></td>
-                        <td style={{padding:"10px 14px"}}>{(()=>{const p=getPosAroundFirst(kw);return p?<PositionBadge pos={p}/>:<span style={{color:C.grayMid,fontSize:12}}>—</span>;})()}</td>
-                        <td style={{padding:"10px 14px",cursor:"pointer"}} title="Click pentru a edita">
-                          {editingInitPos?.kwId===kw.id
-                            ? <input autoFocus type="number" min="1" max="100" value={editingInitPos.val} onChange={e=>setEditingInitPos({kwId:kw.id,val:e.target.value})}
-                                onBlur={async()=>{const v=parseInt(editingInitPos.val);if(v>0){if(supabase)await supabase.from('keywords').update({initial_position:v}).eq('id',String(kw.id));if(onKeywordUpdate)onKeywordUpdate(kw.id,v);}setEditingInitPos(null);}}
-                                onKeyDown={async e=>{if(e.key==='Enter'){const v=parseInt(editingInitPos.val);if(v>0){if(supabase)await supabase.from('keywords').update({initial_position:v}).eq('id',String(kw.id));if(onKeywordUpdate)onKeywordUpdate(kw.id,v);}setEditingInitPos(null);}if(e.key==='Escape')setEditingInitPos(null);}}
-                                style={{width:60,padding:"3px 6px",border:`1.5px solid ${C.orange}`,borderRadius:6,fontSize:13,outline:"none",textAlign:"center"}}/>
-                            : <span onClick={()=>setEditingInitPos({kwId:kw.id,val:kw.prevPosDesktop||''})}>{kw.prevPosDesktop?<PositionBadge pos={kw.prevPosDesktop}/>:<span style={{color:C.grayMid,fontSize:12}}>✏️ adaugă</span>}</span>
-                          }
-                        </td>
-                        <td style={{padding:"10px 14px",fontSize:12,fontWeight:600,color:C.grayDark}}>{kw.volume>0?fmtN(kw.volume):"—"}</td>
-                        <td style={{padding:"10px 14px",fontSize:11,color:C.orange,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{kw.url?<a href={kw.url} target="_blank" rel="noreferrer" style={{color:C.orange,textDecoration:"none"}} title={kw.url}>{kw.url.replace(/^https?:\/\/(www\.)?/,'')}</a>:"—"}</td>
+                        <td style={{padding:"10px 14px",fontWeight:500,fontSize:13,color:C.navy}}><EditableCell kwId={kw.id} field="keyword" fallback={kw.keyword} inputType="text" render={v=>v||kw.keyword} style={{fontWeight:500,fontSize:13}}/></td>
+                        <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="position_desktop" fallback={kw.position_desktop} render={v=>v?<PositionBadge pos={v}/>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>
+                        <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="poz_anterioara" fallback={getPosAroundFirst(kw)} render={v=>v?<PositionBadge pos={v}/>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>
+                        <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="initial_position" fallback={kw.prevPosDesktop||kw.initial_position} render={v=>v?<PositionBadge pos={v}/>:<span style={{color:C.grayMid,fontSize:12}}>✏️ adaugă</span>}/></td>
+                        <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="volume" fallback={kw.volume} render={v=>v>0?fmtN(v):"—"}/></td>
+                        <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="url" fallback={kw.url} inputType="text" render={v=>v?<span style={{fontSize:11,color:C.orange}}>{String(v).replace(/^https?:\/\/(www\.)?/,'').slice(0,30)}</span>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>
                         {config.showTrend&&<td style={{padding:"10px 14px"}}><EvolutionMini history={kw.history}/></td>}
-                        <td style={{padding:"10px 14px",fontSize:12,color:C.green,fontWeight:700}}>{best?`#${best}`:"—"}</td>
+                        <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="best" fallback={best} render={v=>v?<span style={{fontSize:12,color:C.green,fontWeight:700}}>#{v}</span>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>
                       </tr>
                     );
                   })}</tbody>
@@ -1215,8 +1226,8 @@ function RaportSEO({ projects }) {
   const [showTrend, setShowTrend] = useState(true);
   const [localProjects, setLocalProjects] = useState(projects);
   useEffect(()=>setLocalProjects(projects),[projects]);
-  const handleKeywordUpdate = (kwId, initialPos) => {
-    setLocalProjects(prev=>(prev||[]).map(p=>({...p,keywords:(p.keywords||[]).map(k=>k.id===kwId?{...k,initial_position:initialPos}:k)})));
+  const handleKeywordUpdate = (kwId, updates) => {
+    setLocalProjects(prev=>(prev||[]).map(p=>({...p,keywords:(p.keywords||[]).map(k=>k.id===kwId?{...k,...updates}:k)})));
   };
   const [mailTab, setMailTab] = useState("manual");
   const [mailTo, setMailTo] = useState("");
