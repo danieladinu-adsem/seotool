@@ -4,6 +4,11 @@ export async function POST(request) {
     const q = (query || '').trim();
     if (!q) return Response.json({ topics: [] });
 
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.error('[blogtopics] ANTHROPIC_API_KEY lipsă din environment');
+      return Response.json({ topics: [], error: 'ANTHROPIC_API_KEY nu este configurată' }, { status: 500 });
+    }
+
     // 1. Generează keywords conexe cu Claude
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -13,8 +18,8 @@ export async function POST(request) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-opus-4-6',
-        max_tokens: 1000,
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
         messages: [{
           role: 'user',
           content: `Ești un expert SEO. Pentru subiectul "${q}", generează 40 de subiecte/keywords din același domeniu pe care același public țintă le-ar căuta pe Google. Nu include variații ale cuvântului "${q}" ci subiecte complet diferite dar din același domeniu. Returnează DOAR un array JSON cu keywords, fără explicații. Exemplu pentru "asigurare auto": ["parcare laterala", "preschimbare permis auto", "contract vanzare cumparare auto", "itp auto", "amenzi rutiere"]`,
@@ -22,8 +27,15 @@ export async function POST(request) {
       }),
     });
 
+    if (!claudeRes.ok) {
+      const errText = await claudeRes.text();
+      console.error('[blogtopics] Anthropic API error:', claudeRes.status, errText);
+      return Response.json({ topics: [], error: `Anthropic API error ${claudeRes.status}: ${errText}` }, { status: 500 });
+    }
+
     const claudeData = await claudeRes.json();
     const rawText = claudeData?.content?.[0]?.text || '[]';
+    console.log('[blogtopics] Claude răspuns raw:', rawText.slice(0, 200));
 
     let keywords = [];
     try {
@@ -34,6 +46,7 @@ export async function POST(request) {
       return Response.json({ topics: [], error: 'Eroare parsare răspuns Claude' }, { status: 500 });
     }
 
+    console.log('[blogtopics] keywords generate:', keywords.length);
     if (!keywords.length) return Response.json({ topics: [] });
 
     // 2. Obține volume din DataForSEO
@@ -60,7 +73,7 @@ export async function POST(request) {
     const dfsData = await dfsRes.json();
     const items = dfsData?.tasks?.[0]?.result || [];
 
-    console.log('[blogtopics] Claude keywords:', keywords.length, '| DFS results:', items.length);
+    console.log('[blogtopics] DFS results:', items.length);
 
     const topics = items
       .map(item => ({
