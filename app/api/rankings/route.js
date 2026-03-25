@@ -6,7 +6,7 @@ export async function POST(request) {
   ).toString('base64');
 
   const response = await fetch(
-    'https://api.dataforseo.com/v3/serp/google/organic/live/regular',
+    'https://api.dataforseo.com/v3/serp/google/organic/live/advanced',
     {
       method: 'POST',
       headers: {
@@ -20,7 +20,7 @@ export async function POST(request) {
         language_code: 'ro',
         device: device === 'mobile' ? 'mobile' : 'desktop',
         os: device === 'mobile' ? 'android' : 'windows',
-        depth: 100,
+        depth: 700,
       }]),
     }
   );
@@ -31,9 +31,8 @@ export async function POST(request) {
   const urlNorm = normalize(url);
   const domain = urlNorm.split('/')[0];
   const items = data?.tasks?.[0]?.result?.[0]?.items || [];
-  const organicItems = items.filter(item => item.url && item.type !== 'paid');
+  const organicItems = items.filter(item => item.type === 'organic' && item.url);
 
-  // Încearcă mai întâi match exact (bidirecțional), apoi fallback pe domeniu
   let found = organicItems.find(item => {
     const itemNorm = normalize(item.url);
     return urlNorm && (itemNorm.includes(urlNorm) || urlNorm.includes(itemNorm));
@@ -42,11 +41,12 @@ export async function POST(request) {
     found = organicItems.find(item => normalize(item.url).startsWith(domain + '/') || normalize(item.url) === domain);
   }
 
-  console.log('[rankings]', keyword, 'urlNorm:', urlNorm, 'found:', found ? `#${found.rank_absolute} ${found.url}` : 'null', 'organic items:', organicItems.length);
+  const position = found ? (found.rank_group || found.rank_absolute) : null;
+  console.log('[rankings]', keyword, 'urlNorm:', urlNorm, 'found:', found ? `group#${found.rank_group} abs#${found.rank_absolute} ${found.url}` : 'null', 'organic:', organicItems.length);
 
   return Response.json({
-    position: found ? found.rank_absolute : null,
+    position,
     url: found ? found.url : null,
-    debug: { urlNorm, organicCount: organicItems.length, top20: organicItems.slice(0,20).map(i=>({url:i.url,rank:i.rank_absolute,type:i.type})) },
+    debug: { urlNorm, organicCount: organicItems.length, top20: organicItems.slice(0,20).map(i=>({url:i.url,rank_group:i.rank_group,rank_abs:i.rank_absolute})) },
   });
 }
