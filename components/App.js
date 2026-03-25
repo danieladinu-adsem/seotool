@@ -507,7 +507,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
       const prevHistory=(kw.history||[]).filter(h=>h.date!==today).slice(-29);
       const history=newPos!=null?[...prevHistory,{date:today,position:newPos}]:kw.history||[];
       const updated=(projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.map(k=>k.id!==kw.id?k:{...k,[posField]:newPos,position:newPos??kw.position,url:rankUrl,history})});
-      setProjects(updated);onProjectsLoaded&&onProjectsLoaded(updated);
+      setProjects(updated);
     }catch(e){console.error('checkSingleKeyword error',kw.keyword,e.message);}
     finally{setCheckingKwIds(prev=>{const s=new Set(prev);s.delete(kw.id);return s;});}
   };
