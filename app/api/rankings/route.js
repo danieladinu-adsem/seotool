@@ -6,7 +6,7 @@ export async function POST(request) {
   ).toString('base64');
 
   const response = await fetch(
-    'https://api.dataforseo.com/v3/serp/google/organic/live/advanced',
+    'https://api.dataforseo.com/v3/serp/google/organic/live/regular',
     {
       method: 'POST',
       headers: {
