@@ -502,10 +502,11 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
       const posField=activeDevice==='mobile'?'position_mobile':'position_desktop';
       if(supabase){
         await supabase.from('keywords').update({[posField]:newPos,position:newPos??kw.position,url:rankUrl}).eq('id',String(kw.id));
-        if(newPos!=null){await supabase.from('keyword_history').upsert({keyword_id:String(kw.id),position:newPos,date:today},{onConflict:'keyword_id,date'});}
+        if(newPos!=null){const{error:histErr}=await supabase.from('keyword_history').upsert({keyword_id:String(kw.id),position:newPos,date:today},{onConflict:'keyword_id,date'});if(histErr)console.error('[history upsert error]',JSON.stringify(histErr),{keyword_id:String(kw.id),date:today});else console.log('[history saved]',kw.keyword,today,'pos:',newPos);}
       }
       const prevHistory=(kw.history||[]).filter(h=>h.date!==today).slice(-29);
       const history=newPos!=null?[...prevHistory,{date:today,position:newPos}]:kw.history||[];
+      console.log('[checkSingleKeyword] local history updated, entries:',history.length,'last:',history[history.length-1]);
       const updated=(projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.map(k=>k.id!==kw.id?k:{...k,[posField]:newPos,position:newPos??kw.position,url:rankUrl,history})});
       setProjects(updated);
     }catch(e){console.error('checkSingleKeyword error',kw.keyword,e.message);}
