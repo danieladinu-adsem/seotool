@@ -20,33 +20,36 @@ export async function POST(request) {
         language_code: 'ro',
         device: device === 'mobile' ? 'mobile' : 'desktop',
         os: device === 'mobile' ? 'android' : 'windows',
-        depth: 700,
+        depth: 100,
       }]),
     }
   );
 
   const data = await response.json();
+  const task = data?.tasks?.[0];
+  console.log('[rankings raw]', keyword, 'status:', task?.status_code, task?.status_message, 'result items:', task?.result?.[0]?.items?.length ?? 'no result');
 
   const normalize = u => (u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '').toLowerCase().split('?')[0].split('#')[0];
   const urlNorm = normalize(url);
   const domain = urlNorm.split('/')[0];
   const items = data?.tasks?.[0]?.result?.[0]?.items || [];
-  const organicItems = items.filter(item => item.type === 'organic' && item.url);
+  const allWithUrl = items.filter(item => item.url);
 
-  let found = organicItems.find(item => {
+  let found = allWithUrl.find(item => {
     const itemNorm = normalize(item.url);
     return urlNorm && (itemNorm.includes(urlNorm) || urlNorm.includes(itemNorm));
   });
   if (!found && domain) {
-    found = organicItems.find(item => normalize(item.url).startsWith(domain + '/') || normalize(item.url) === domain);
+    found = allWithUrl.find(item => normalize(item.url).startsWith(domain + '/') || normalize(item.url) === domain);
   }
 
   const position = found ? (found.rank_group || found.rank_absolute) : null;
-  console.log('[rankings]', keyword, 'urlNorm:', urlNorm, 'found:', found ? `group#${found.rank_group} abs#${found.rank_absolute} ${found.url}` : 'null', 'organic:', organicItems.length);
+  const domainMatches = allWithUrl.filter(i => normalize(i.url).includes(domain)).map(i=>({url:i.url,type:i.type,rg:i.rank_group,ra:i.rank_absolute}));
+  console.log('[rankings]', keyword, 'urlNorm:', urlNorm, 'found:', found ? `#${position}` : 'null', 'total items:', allWithUrl.length);
 
   return Response.json({
     position,
     url: found ? found.url : null,
-    debug: { urlNorm, organicCount: organicItems.length, top20: organicItems.slice(0,20).map(i=>({url:i.url,rank_group:i.rank_group,rank_abs:i.rank_absolute})) },
+    debug: { urlNorm, totalWithUrl: allWithUrl.length, domainMatches },
   });
 }
