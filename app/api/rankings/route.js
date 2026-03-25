@@ -31,7 +31,7 @@ export async function POST(request) {
   const urlNorm = normalize(url);
   const domain = urlNorm.split('/')[0];
   const items = data?.tasks?.[0]?.result?.[0]?.items || [];
-  const organicItems = items.filter(item => item.type === 'organic' && item.url);
+  const organicItems = items.filter(item => item.url && item.type !== 'paid');
 
   // Încearcă mai întâi match exact (bidirecțional), apoi fallback pe domeniu
   let found = organicItems.find(item => {
@@ -47,6 +47,6 @@ export async function POST(request) {
   return Response.json({
     position: found ? found.rank_absolute : null,
     url: found ? found.url : null,
-    debug: { urlNorm, organicCount: organicItems.length, top5: organicItems.slice(0,5).map(i=>({url:i.url,rank:i.rank_absolute})) },
+    debug: { urlNorm, organicCount: organicItems.length, top20: organicItems.slice(0,20).map(i=>({url:i.url,rank:i.rank_absolute,type:i.type})) },
   });
 }
