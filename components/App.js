@@ -506,7 +506,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
       }
       const prevHistory=(kw.history||[]).filter(h=>h.date!==today).slice(-29);
       const history=newPos!=null?[...prevHistory,{date:today,position:newPos}]:kw.history||[];
-      console.log('[checkSingleKeyword] local history updated, entries:',history.length,'last:',history[history.length-1]);
+      const last=history[history.length-1];console.log('[checkSingleKeyword] history entries:',history.length,'last date:',last?.date,'last pos:',last?.position,'newPos was:',newPos);
       const updated=(projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.map(k=>k.id!==kw.id?k:{...k,[posField]:newPos,position:newPos??kw.position,url:rankUrl,history})});
       setProjects(updated);
     }catch(e){console.error('checkSingleKeyword error',kw.keyword,e.message);}
