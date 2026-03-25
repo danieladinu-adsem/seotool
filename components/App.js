@@ -497,6 +497,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
     try{
       const res=await fetch('/api/rankings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw.keyword,url:proj.url,device:activeDevice,location_code:proj.location_code||2642,se_domain:proj.se_domain||'google.ro'})});
       const data=await res.json();
+      console.log('[rankings response]',kw.keyword,'→',JSON.stringify(data));
       const newPos=data.position??null;
       const rankUrl=data.url||kw.url||'';
       const posField=activeDevice==='mobile'?'position_mobile':'position_desktop';

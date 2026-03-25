@@ -47,5 +47,6 @@ export async function POST(request) {
   return Response.json({
     position: found ? found.rank_absolute : null,
     url: found ? found.url : null,
+    debug: { urlNorm, organicCount: organicItems.length, top5: organicItems.slice(0,5).map(i=>({url:i.url,rank:i.rank_absolute})) },
   });
 }
