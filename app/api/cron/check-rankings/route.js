@@ -9,7 +9,7 @@ const DATAFORSEO_AUTH = () => Buffer.from(
   `${process.env.DATAFORSEO_LOGIN}:${process.env.DATAFORSEO_PASSWORD}`
 ).toString('base64');
 
-const normalize = u => (u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '').toLowerCase();
+const normalize = u => (u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '').toLowerCase().split('?')[0].split('#')[0];
 
 async function getRanking(keyword, url, location_code, se_domain) {
   try {
@@ -28,15 +28,29 @@ async function getRanking(keyword, url, location_code, se_domain) {
     });
     const data = await res.json();
     const items = data?.tasks?.[0]?.result?.[0]?.items || [];
+    const organicItems = items.filter(i => i.type === 'organic' && i.url);
     const normUrl = normalize(url);
-    for (const item of items) {
-      if (item.type === 'organic' && normalize(item.url).includes(normUrl)) {
-        return item.rank_absolute ?? null;
-      }
+    const domain = normUrl.split('/')[0];
+
+    // Caută match exact sau parțial
+    let found = organicItems.find(item => {
+      const n = normalize(item.url);
+      return n.includes(normUrl) || normUrl.includes(n);
+    });
+    // Fallback: domain match
+    if (!found && domain) {
+      found = organicItems.find(item => {
+        const n = normalize(item.url);
+        return n.startsWith(domain + '/') || n === domain;
+      });
     }
-    return null;
-  } catch {
-    return null;
+
+    return {
+      pos: found ? (found.rank_group || found.rank_absolute) : null,
+      organicCount: organicItems.length,
+    };
+  } catch (e) {
+    return { pos: null, organicCount: 0, fetchError: e.message };
   }
 }
 
@@ -58,6 +72,7 @@ export async function GET(request) {
     .select('id, url, auto_check, location_code, se_domain');
 
   if (projError) {
+    console.error('[cron] projects error:', projError);
     return Response.json({ error: 'Failed to load projects', details: projError }, { status: 500 });
   }
 
@@ -67,10 +82,15 @@ export async function GET(request) {
     if (!project.url) continue;
     if (project.auto_check === false) continue;
 
-    const { data: keywords } = await supabase
+    const { data: keywords, error: kwError } = await supabase
       .from('keywords')
       .select('id, keyword')
       .eq('project_id', project.id);
+
+    if (kwError) {
+      console.error('[cron] keywords error pentru project', project.id, kwError);
+      continue;
+    }
 
     for (const kw of keywords || []) {
       allTasks.push({ kw, project });
@@ -78,10 +98,14 @@ export async function GET(request) {
   }
 
   // Găsește keyword-urile deja verificate azi
-  const { data: todayHistory } = await supabase
+  const { data: todayHistory, error: histError } = await supabase
     .from('keyword_history')
     .select('keyword_id')
     .eq('date', today);
+
+  if (histError) {
+    console.error('[cron] eroare citire history azi:', histError);
+  }
 
   const checkedIds = new Set((todayHistory || []).map(h => String(h.keyword_id)));
 
@@ -90,7 +114,10 @@ export async function GET(request) {
 
   const results = {
     updated: 0,
+    found: 0,
+    notFound: 0,
     errors: 0,
+    supabaseErrors: 0,
     skipped: checkedIds.size,
     total: allTasks.length,
     remaining: remaining.length,
@@ -106,22 +133,44 @@ export async function GET(request) {
       break;
     }
     try {
-      const pos = await getRanking(kw.keyword, project.url, project.location_code, project.se_domain);
+      const { pos, organicCount, fetchError } = await getRanking(kw.keyword, project.url, project.location_code, project.se_domain);
 
-      await supabase
+      if (fetchError) {
+        results.errors++;
+        results.details.push({ keyword: kw.keyword, status: 'fetch_error', error: fetchError });
+        continue;
+      }
+
+      // Actualizează câmpul curent în keywords
+      const { error: kwUpdateErr } = await supabase
         .from('keywords')
         .update({ position_desktop: pos, position: pos })
         .eq('id', kw.id);
 
-      if (pos != null) {
-        await supabase.from('keyword_history').upsert(
+      if (kwUpdateErr) {
+        console.error('[cron] eroare update keyword', kw.keyword, kwUpdateErr);
+        results.supabaseErrors++;
+      }
+
+      // Salvează în history ÎNTOTDEAUNA (chiar dacă pos e null = keyword nu a apărut în SERP)
+      const { error: histUpsertErr } = await supabase
+        .from('keyword_history')
+        .upsert(
           { keyword_id: kw.id, position: pos, date: today },
           { onConflict: 'keyword_id,date' }
         );
+
+      if (histUpsertErr) {
+        console.error('[cron] eroare upsert history', kw.keyword, histUpsertErr);
+        results.supabaseErrors++;
+        results.details.push({ keyword: kw.keyword, status: 'history_error', error: histUpsertErr.message, code: histUpsertErr.code, pos });
+      } else {
+        results.updated++;
+        if (pos != null) results.found++;
+        else results.notFound++;
+        results.details.push({ keyword: kw.keyword, status: 'ok', pos, organicCount });
       }
 
-      results.updated++;
-      results.details.push({ keyword: kw.keyword, status: 'ok', pos });
     } catch (e) {
       results.errors++;
       results.details.push({ keyword: kw.keyword, status: 'error', error: e.message });
@@ -129,6 +178,6 @@ export async function GET(request) {
   }
 
   const allDone = checkedIds.size + results.updated >= allTasks.length;
-  console.log(`Cron: ${results.updated} procesate, ${checkedIds.size} deja ok, ${results.errors} erori, ${remaining.length - results.updated - results.errors} rămase`);
+  console.log(`[cron] ${results.updated} salvate (${results.found} găsite, ${results.notFound} negăsite), ${checkedIds.size} deja ok, ${results.supabaseErrors} erori supabase, ${results.errors} erori`);
   return Response.json({ success: true, date: today, allDone, ...results });
 }
