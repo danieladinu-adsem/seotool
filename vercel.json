@@ -9,10 +9,14 @@
     {"path": "/api/cron/check-rankings", "schedule": "30 6 * * *"},
     {"path": "/api/cron/check-rankings", "schedule": "35 6 * * *"},
     {"path": "/api/cron/check-rankings", "schedule": "40 6 * * *"},
-    {"path": "/api/cron/check-rankings", "schedule": "45 6 * * *"}
+    {"path": "/api/cron/check-rankings", "schedule": "45 6 * * *"},
+    {"path": "/api/cron/monthly-report", "schedule": "0 7 * * *"}
   ],
   "functions": {
     "app/api/cron/check-rankings/route.js": {
+      "maxDuration": 300
+    },
+    "app/api/cron/monthly-report/route.js": {
       "maxDuration": 300
     }
   }
