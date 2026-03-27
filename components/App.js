@@ -505,12 +505,10 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
       if(supabase){
         const{error:kwErr}=await supabase.from('keywords').update({[posField]:newPos,position:newPos??kw.position,url:rankUrl}).eq('id',String(kw.id));
         if(kwErr)console.error('[keywords update error]',kw.keyword,JSON.stringify(kwErr));
-        const{error:histErr}=await supabase.from('keyword_history').upsert({keyword_id:String(kw.id),position:newPos,date:today},{onConflict:'keyword_id,date'});
-        if(histErr)console.error('[history upsert error]',kw.keyword,JSON.stringify(histErr));
-        else console.log('[history saved]',kw.keyword,today,'pos:',newPos);
+        if(newPos!=null){const{error:histErr}=await supabase.from('keyword_history').upsert({keyword_id:String(kw.id),position:newPos,date:today},{onConflict:'keyword_id,date'});if(histErr)console.error('[history upsert error]',kw.keyword,JSON.stringify(histErr));else console.log('[history saved]',kw.keyword,today,'pos:',newPos);}
       }
       const prevHistory=(kw.history||[]).filter(h=>h.date!==today).slice(-29);
-      const history=[...prevHistory,{date:today,position:newPos}];
+      const history=newPos!=null?[...prevHistory,{date:today,position:newPos}]:kw.history||[];
       const updated=(projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.map(k=>k.id!==kw.id?k:{...k,[posField]:newPos,position:newPos??kw.position,url:rankUrl,history})});
       setProjects(updated);
     }catch(e){console.error('checkSingleKeyword error',kw.keyword,e.message);}
