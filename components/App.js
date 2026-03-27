@@ -631,7 +631,7 @@ function Forecasting() {
     ]);
     const volume     = volRes.status  === 'fulfilled' ? (volRes.value?.tasks?.[0]?.result?.[0]?.search_volume || 0) : 0;
     const realPos    = rankRes.status === 'fulfilled' ? (rankRes.value?.position ?? null) : null;
-    const currentPos = realPos ?? 50;
+    const currentPos = realPos ?? 100;
     setKeywords(prev => prev.map(k => k.id === id ? { ...k, volume, currentPos, posChecked: true, posFound: realPos !== null, loading: false } : k));
   };
 
@@ -666,7 +666,7 @@ function Forecasting() {
       ]);
       const volume     = volRes.status  === 'fulfilled' ? (volRes.value?.tasks?.[0]?.result?.[0]?.search_volume || 0) : 0;
       const realPos    = rankRes.status === 'fulfilled' ? (rankRes.value?.position ?? null) : null;
-      const currentPos = realPos ?? 50;
+      const currentPos = realPos ?? 100;
       setKeywords(prev => prev.map(k => k.id === id ? { ...k, volume, currentPos, posChecked: true, posFound: realPos !== null, loading: false } : k));
     }
   };
@@ -708,7 +708,7 @@ function Forecasting() {
       ]);
       const volume     = volRes.status  === 'fulfilled' ? (volRes.value?.tasks?.[0]?.result?.[0]?.search_volume || 0) : 0;
       const realPos    = rankRes.status === 'fulfilled' ? (rankRes.value?.position ?? null) : null;
-      const currentPos = realPos ?? 50;
+      const currentPos = realPos ?? 100;
       setKeywords(prev => prev.map(k => k.id === id ? { ...k, volume, currentPos, posChecked: true, posFound: realPos !== null, loading: false } : k));
     }
   };
