@@ -604,7 +604,8 @@ function Forecasting() {
   const [crawlResults, setCrawlResults] = useState(null);
   const [crawlError, setCrawlError] = useState('');
   const [selectedCrawlKws, setSelectedCrawlKws] = useState(new Set());
-  const [siteUrl, setSiteUrl] = useState("");
+  const [siteUrl, setSiteUrl] = useState(()=>{ try{return localStorage.getItem('forecast_siteUrl')||'';}catch{return '';} });
+  const updateSiteUrl = v => { setSiteUrl(v); try{if(v)localStorage.setItem('forecast_siteUrl',v);else localStorage.removeItem('forecast_siteUrl');}catch{} };
   const [keywords, setKeywords] = useState([]);
   const [kwInput, setKwInput] = useState("");
   const [chartTip, setChartTip] = useState(null);
@@ -643,7 +644,7 @@ function Forecasting() {
     setHorizon(12);
     setScenario("realistic");
     setCustomPos(10);
-    setSiteUrl("");
+    updateSiteUrl("");
     setKwInput("");
     setBulkForecastText("");
     setShowBulkForecast(false);
@@ -825,7 +826,7 @@ function Forecasting() {
           )}
         </div>
         <div style={{ flex: 1, minWidth: 200 }}>
-          <input value={siteUrl} onChange={e => setSiteUrl(e.target.value)} placeholder="URL site (ex: https://site.ro) — pentru poziții reale" style={{ width: "100%", padding: "8px 12px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, outline: "none", boxSizing: "border-box", color: C.navy }} onFocus={e => e.target.style.borderColor = C.orange} onBlur={e => e.target.style.borderColor = C.border} />
+          <div style={{position:"relative",display:"flex",alignItems:"center"}}><input value={siteUrl} onChange={e=>updateSiteUrl(e.target.value)} placeholder="URL site (ex: https://site.ro) — pentru poziții reale" style={{width:"100%",padding:"8px 32px 8px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",color:C.navy}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>{siteUrl&&<button onClick={()=>updateSiteUrl('')} title="Șterge URL" style={{position:"absolute",right:8,background:"none",border:"none",cursor:"pointer",fontSize:16,color:C.grayText,lineHeight:1,padding:0}}>×</button>}</div>
         </div>
       </div>
 
