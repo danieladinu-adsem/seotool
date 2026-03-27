@@ -630,8 +630,9 @@ function Forecasting() {
       fetch('/api/rankings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: kw, url: siteUrl }) }).then(r => r.json()),
     ]);
     const volume     = volRes.status  === 'fulfilled' ? (volRes.value?.tasks?.[0]?.result?.[0]?.search_volume || 0) : 0;
-    const currentPos = rankRes.status === 'fulfilled' ? (rankRes.value?.position || 50) : 50;
-    setKeywords(prev => prev.map(k => k.id === id ? { ...k, volume, currentPos, loading: false } : k));
+    const realPos    = rankRes.status === 'fulfilled' ? (rankRes.value?.position ?? null) : null;
+    const currentPos = realPos ?? 50;
+    setKeywords(prev => prev.map(k => k.id === id ? { ...k, volume, currentPos, posChecked: true, posFound: realPos !== null, loading: false } : k));
   };
 
   const removeKeyword = id => setKeywords(prev => prev.filter(k => k.id !== id));
@@ -664,8 +665,9 @@ function Forecasting() {
         fetch('/api/rankings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: kw, url: siteUrl }) }).then(r => r.json()),
       ]);
       const volume     = volRes.status  === 'fulfilled' ? (volRes.value?.tasks?.[0]?.result?.[0]?.search_volume || 0) : 0;
-      const currentPos = rankRes.status === 'fulfilled' ? (rankRes.value?.position || 50) : 50;
-      setKeywords(prev => prev.map(k => k.id === id ? { ...k, volume, currentPos, loading: false } : k));
+      const realPos    = rankRes.status === 'fulfilled' ? (rankRes.value?.position ?? null) : null;
+      const currentPos = realPos ?? 50;
+      setKeywords(prev => prev.map(k => k.id === id ? { ...k, volume, currentPos, posChecked: true, posFound: realPos !== null, loading: false } : k));
     }
   };
 
@@ -705,8 +707,9 @@ function Forecasting() {
         fetch('/api/rankings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: kw, url: siteUrl }) }).then(r => r.json()),
       ]);
       const volume     = volRes.status  === 'fulfilled' ? (volRes.value?.tasks?.[0]?.result?.[0]?.search_volume || 0) : 0;
-      const currentPos = rankRes.status === 'fulfilled' ? (rankRes.value?.position || 50) : 50;
-      setKeywords(prev => prev.map(k => k.id === id ? { ...k, volume, currentPos, loading: false } : k));
+      const realPos    = rankRes.status === 'fulfilled' ? (rankRes.value?.position ?? null) : null;
+      const currentPos = realPos ?? 50;
+      setKeywords(prev => prev.map(k => k.id === id ? { ...k, volume, currentPos, posChecked: true, posFound: realPos !== null, loading: false } : k));
     }
   };
 
@@ -974,7 +977,7 @@ function Forecasting() {
                   <tr key={kw.id} style={{ borderBottom: `1px solid ${C.grayMid}` }} onMouseEnter={e => e.currentTarget.style.background = C.gray} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                     <td style={{ padding: "11px 14px", fontWeight: 500, fontSize: 13, color: C.navy }}>{kw.keyword}</td>
                     <td style={{ padding: "11px 14px", fontSize: 13, color: C.grayDark }}>{kw.loading ? <span style={{ color: C.grayText, fontSize: 11, fontStyle: "italic" }}>Se încarcă...</span> : fmtN(kw.volume)}</td>
-                    <td style={{ padding: "11px 14px" }}>{kw.loading ? <span style={{ color: C.grayText, fontSize: 11, fontStyle: "italic" }}>Se încarcă...</span> : <PositionBadge pos={kw.currentPos} />}</td>
+                    <td style={{ padding: "11px 14px" }}>{kw.loading ? <span style={{ color: C.grayText, fontSize: 11, fontStyle: "italic" }}>Se verifică...</span> : kw.posChecked && !kw.posFound ? <div style={{display:"flex",alignItems:"center",gap:4}}><input type="number" min={1} max={200} defaultValue={kw.currentPos} onChange={e=>{const v=parseInt(e.target.value);if(v>0)setKeywords(prev=>prev.map(k=>k.id===kw.id?{...k,currentPos:v}:k));}} style={{width:54,padding:"3px 6px",border:`1.5px solid ${C.orange}`,borderRadius:6,fontSize:12,textAlign:"center",outline:"none"}} title="Negăsit în top 100 — introduceți poziția manual"/><span style={{fontSize:10,color:C.orange,whiteSpace:"nowrap"}}>negăsit</span></div> : <PositionBadge pos={kw.currentPos} />}</td>
                     <td style={{ padding: "11px 14px", fontSize: 13, color: C.grayText }}>{kw.loading ? "…" : (getCTR(kw.currentPos) * 100).toFixed(1) + "%"}</td>
                     <td style={{ padding: "11px 14px" }}><PositionBadge pos={targetPos} /></td>
                     <td style={{ padding: "11px 14px", fontSize: 13, color: C.green, fontWeight: 600 }}>{kw.loading ? "…" : (getCTR(targetPos) * 100).toFixed(1) + "%"}</td>
