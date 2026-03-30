@@ -9,7 +9,11 @@ const DATAFORSEO_AUTH = () => Buffer.from(
   `${process.env.DATAFORSEO_LOGIN}:${process.env.DATAFORSEO_PASSWORD}`
 ).toString('base64');
 
-const normalize = u => (u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '').toLowerCase().split('?')[0].split('#')[0];
+const extractDomain = u => (u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').toLowerCase().split('/')[0].split('?')[0].split('#')[0];
+const domainMatch = (trackedDomain, serpUrl) => {
+  const d = extractDomain(serpUrl);
+  return d === trackedDomain || d.endsWith('.' + trackedDomain);
+};
 
 async function getRanking(keyword, url, location_code, se_domain) {
   try {
@@ -28,20 +32,11 @@ async function getRanking(keyword, url, location_code, se_domain) {
     });
     const data = await res.json();
     const items = data?.tasks?.[0]?.result?.[0]?.items || [];
-    const organicItems = items.filter(i => i.type === 'organic' && i.url);
-    const normUrl = normalize(url);
-    const domain = normUrl.split('/')[0];
+    const allWithUrl = items.filter(i => i.url);
+    const trackedDomain = extractDomain(url);
 
-    let found = organicItems.find(item => {
-      const n = normalize(item.url);
-      return n.includes(normUrl) || normUrl.includes(n);
-    });
-    if (!found && domain) {
-      found = organicItems.find(item => {
-        const n = normalize(item.url);
-        return n.startsWith(domain + '/') || n === domain;
-      });
-    }
+    let found = allWithUrl.find(i => i.type === 'organic' && domainMatch(trackedDomain, i.url));
+    if (!found) found = allWithUrl.find(i => domainMatch(trackedDomain, i.url));
     return found ? (found.rank_group || found.rank_absolute) : null;
   } catch {
     return null;

@@ -29,23 +29,26 @@ export async function POST(request) {
   const task = data?.tasks?.[0];
   console.log('[rankings raw]', keyword, 'status:', task?.status_code, task?.status_message, 'result items:', task?.result?.[0]?.items?.length ?? 'no result');
 
-  const normalize = u => (u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '').toLowerCase().split('?')[0].split('#')[0];
-  const urlNorm = normalize(url);
-  const domain = urlNorm.split('/')[0];
+  // Extrage domeniul de bază (fără protocol, www, path, query)
+  const extractDomain = u => (u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').toLowerCase().split('/')[0].split('?')[0].split('#')[0];
+  const trackedDomain = extractDomain(url);
+
+  // Match: domeniu identic sau subdomeniu al domeniului tracked
+  const domainMatch = serpUrl => {
+    const d = extractDomain(serpUrl);
+    return d === trackedDomain || d.endsWith('.' + trackedDomain);
+  };
+
   const items = data?.tasks?.[0]?.result?.[0]?.items || [];
   const allWithUrl = items.filter(item => item.url);
 
-  let found = allWithUrl.find(item => {
-    const itemNorm = normalize(item.url);
-    return urlNorm && (itemNorm.includes(urlNorm) || urlNorm.includes(itemNorm));
-  });
-  if (!found && domain) {
-    found = allWithUrl.find(item => normalize(item.url).startsWith(domain + '/') || normalize(item.url) === domain);
-  }
+  // Caută întâi în rezultatele organice, apoi în toate
+  let found = allWithUrl.find(item => item.type === 'organic' && domainMatch(item.url));
+  if (!found) found = allWithUrl.find(item => domainMatch(item.url));
 
   const position = found ? (found.rank_group || found.rank_absolute) : null;
-  const domainMatches = allWithUrl.filter(i => normalize(i.url).includes(domain)).map(i=>({url:i.url,type:i.type,rg:i.rank_group,ra:i.rank_absolute}));
-  console.log('[rankings]', keyword, 'urlNorm:', urlNorm, 'found:', found ? `#${position}` : 'null', 'total items:', allWithUrl.length);
+  const domainMatches = allWithUrl.filter(i => domainMatch(i.url)).map(i => ({ url: i.url, type: i.type, rg: i.rank_group, ra: i.rank_absolute }));
+  console.log('[rankings]', keyword, 'trackedDomain:', trackedDomain, 'found:', found ? `#${position}` : 'null', 'organicItems:', allWithUrl.filter(i=>i.type==='organic').length, 'domainMatches:', domainMatches.length);
 
   return Response.json({
     position,
