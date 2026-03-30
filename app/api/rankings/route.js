@@ -1,4 +1,5 @@
 export async function POST(request) {
+  try {
   const { keyword, url, location_code, se_domain, device } = await request.json();
 
   const credentials = Buffer.from(
@@ -53,6 +54,10 @@ export async function POST(request) {
   return Response.json({
     position,
     url: found ? found.url : null,
-    debug: { urlNorm, totalWithUrl: allWithUrl.length, domainMatches },
+    debug: { trackedDomain, totalWithUrl: allWithUrl.length, domainMatches },
   });
+  } catch (e) {
+    console.error('[rankings] error:', e.message);
+    return Response.json({ position: null, url: null, error: e.message }, { status: 500 });
+  }
 }
