@@ -146,17 +146,13 @@ export async function GET(request) {
         results.supabaseErrors++;
       }
 
-      // Salvează în history DOAR dacă s-a găsit o poziție validă
-      let histUpsertErr = null;
-      if (pos != null) {
-        const { error } = await supabase
-          .from('keyword_history')
-          .upsert(
-            { keyword_id: kw.id, position: pos, date: today },
-            { onConflict: 'keyword_id,date' }
-          );
-        histUpsertErr = error;
-      }
+      // Salvează în history întotdeauna (null = verificat dar negăsit în top 100)
+      const { error: histUpsertErr } = await supabase
+        .from('keyword_history')
+        .upsert(
+          { keyword_id: kw.id, position: pos, date: today },
+          { onConflict: 'keyword_id,date' }
+        );
 
       if (histUpsertErr) {
         console.error('[cron] eroare upsert history', kw.keyword, histUpsertErr);
