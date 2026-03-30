@@ -473,10 +473,10 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
         const posField=activeDevice==='mobile'?'position_mobile':'position_desktop';
         if(supabase){
           await supabase.from('keywords').update({[posField]:newPos,position:newPos??kw.position,url:rankUrl}).eq('id',String(kw.id));
-          if(newPos!=null){await supabase.from('keyword_history').upsert({keyword_id:String(kw.id),position:newPos,date:today},{onConflict:'keyword_id,date'});}
+          await supabase.from('keyword_history').upsert({keyword_id:String(kw.id),position:newPos,date:today},{onConflict:'keyword_id,date'});
         }
         const prevHistory=(kw.history||[]).filter(h=>h.date!==today).slice(-29);
-        const history=newPos!=null?[...prevHistory,{date:today,position:newPos}]:kw.history||[];
+        const history=[...prevHistory,{date:today,position:newPos}];
         updatedKeywords.push({...kw,[posField]:newPos,position:newPos??kw.position,url:rankUrl,history});
       }catch(e){
         console.error('checkNow error pentru',kw.keyword,e.message);
