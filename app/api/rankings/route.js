@@ -54,7 +54,12 @@ export async function POST(request) {
   return Response.json({
     position,
     url: found ? found.url : null,
-    debug: { trackedDomain, totalWithUrl: allWithUrl.length, domainMatches },
+    debug: {
+      trackedDomain,
+      totalWithUrl: allWithUrl.length,
+      domainMatches,
+      first10urls: allWithUrl.slice(0, 10).map(i => ({ url: i.url, type: i.type, rank_group: i.rank_group, rank_absolute: i.rank_absolute })),
+    },
   });
   } catch (e) {
     console.error('[rankings] error:', e.message);
