@@ -1171,7 +1171,7 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
               <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead><tr style={{background:C.gray}}>
-                    {["Keyword","🖥 Desktop","Poz. anterioară","Poziție inițială","Volum lunar","URL",...(config.showTrend?["Trend"]:[]),"Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
+                    {["Keyword","🖥 Desktop",...(config.showPrevPos?["Poz. anterioară"]:[]),"Poziție inițială","Volum lunar","URL",...(config.showTrend?["Trend"]:[]),"Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
                   </tr></thead>
                   <tbody>{[...movers].sort((a,b)=>(b.volume||0)-(a.volume||0)).slice(0,config.maxKeywords||999).map((kw,i)=>{
                     const allPos=(kw.history||[]).map(h=>h.position).filter(p=>p>0);
@@ -1180,7 +1180,7 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
                       <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
                         <td style={{padding:"10px 14px",fontWeight:500,fontSize:13,color:C.navy}}><EditableCell kwId={kw.id} field="keyword" fallback={kw.keyword} inputType="text" render={v=>v||kw.keyword} style={{fontWeight:500,fontSize:13}}/></td>
                         <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="position_desktop" fallback={kw.position_desktop} render={v=>v?<PositionBadge pos={v}/>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>
-                        <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="poz_anterioara" fallback={getPosAroundFirst(kw)} render={v=>v?<PositionBadge pos={v}/>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>
+                        {config.showPrevPos&&<td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="poz_anterioara" fallback={getPosAroundFirst(kw)} render={v=>v?<PositionBadge pos={v}/>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>}
                         <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="initial_position" fallback={kw.prevPosDesktop||kw.initial_position} render={v=>v?<PositionBadge pos={v}/>:<span style={{color:C.grayMid,fontSize:12}}>✏️ adaugă</span>}/></td>
                         <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="volume" fallback={kw.volume} render={v=>v>0?fmtN(v):"—"}/></td>
                         <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="url" fallback={kw.url} inputType="text" render={v=>v?<span style={{fontSize:11,color:C.orange}}>{String(v).replace(/^https?:\/\/(www\.)?/,'').slice(0,30)}</span>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>
@@ -1233,6 +1233,7 @@ function RaportSEO({ projects }) {
   const [summaryText, setSummaryText] = useState(DEFAULT_SUMMARY);
   const maxKeywords = 999;
   const [showTrend, setShowTrend] = useState(true);
+  const [showPrevPos, setShowPrevPos] = useState(true);
   const [localProjects, setLocalProjects] = useState(projects);
   useEffect(()=>setLocalProjects(projects),[projects]);
   const handleKeywordUpdate = (kwId, updates) => {
@@ -1254,7 +1255,7 @@ function RaportSEO({ projects }) {
   const project = (localProjects||projects)?.find(p=>p.id===selectedProjId);
   const p1Label = `${MONTHS_FULL[p1Month]} ${p1Year}`;
   const p2Label = `${MONTHS_FULL[p2Month]} ${p2Year}`;
-  const config = { sections, reportTitle, summaryText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords, p2Month, p2Year, showTrend };
+  const config = { sections, reportTitle, summaryText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords, p2Month, p2Year, showTrend, showPrevPos };
 
 
   const sortedSections = [...sections].sort((a,b)=>a.order-b.order);
@@ -1424,6 +1425,11 @@ function RaportSEO({ projects }) {
                 <input type="checkbox" checked={showTrend} onChange={()=>setShowTrend(v=>!v)} style={{accentColor}}/>
                 <span style={{fontSize:16}}>📈</span>
                 <span style={{flex:1,fontSize:13,fontWeight:500,color:showTrend?C.navy:C.grayText}}>Trend (grafic evoluție)</span>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginTop:8,background:showPrevPos?`${accentColor}0a`:C.gray,border:`1.5px solid ${showPrevPos?accentColor:C.border}`,borderRadius:9,padding:"10px 12px"}}>
+                <input type="checkbox" checked={showPrevPos} onChange={()=>setShowPrevPos(v=>!v)} style={{accentColor}}/>
+                <span style={{fontSize:16}}>📊</span>
+                <span style={{flex:1,fontSize:13,fontWeight:500,color:showPrevPos?C.navy:C.grayText}}>Poziție anterioară</span>
               </div>
             </div>
 
