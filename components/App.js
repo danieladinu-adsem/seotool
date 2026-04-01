@@ -1298,24 +1298,30 @@ function RaportSEO({ projects }) {
   };
 
   const handleSendMail = async () => {
-    if(!mailTo) return;
+    console.log('[sendMail] click, mailTo:', mailTo);
+    if(!mailTo) { console.log('[sendMail] mailTo gol, abort'); return; }
     setMailSending(true);
     setMailError('');
     try {
       const reportHtml = reportRef.current?.innerHTML || '';
+      console.log('[sendMail] reportHtml length:', reportHtml.length);
       if (!reportHtml) {
         throw new Error('Raportul nu a fost generat. Selectează un proiect și încearcă din nou.');
       }
+      console.log('[sendMail] fetch start...');
       const res = await fetch('/api/send-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ to: mailTo, subject: mailSubject, message: mailMsg, reportHtml }),
       });
+      console.log('[sendMail] fetch status:', res.status);
       const data = await res.json();
+      console.log('[sendMail] response data:', JSON.stringify(data));
       if (!res.ok) throw new Error(data.error || 'Eroare la trimitere');
       setMailSent(true);
       setTimeout(() => setMailSent(false), 3000);
     } catch (e) {
+      console.error('[sendMail] eroare:', e.message);
       setMailError(e.message);
     } finally {
       setMailSending(false);
@@ -1466,11 +1472,11 @@ function RaportSEO({ projects }) {
                       style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}
                       onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
                   </div>
+                  {mailError&&<div style={{marginBottom:10,padding:"10px 12px",background:"#fef2f2",border:"1.5px solid #fca5a5",borderRadius:8,fontSize:12,color:"#dc2626"}}><strong>Eroare:</strong> {mailError}</div>}
                   <button onClick={handleSendMail} disabled={mailSending||!mailTo}
                     style={{width:"100%",padding:"10px",background:mailSent?C.green:mailSending?C.grayMid:C.orange,color:C.white,border:"none",borderRadius:8,fontWeight:700,fontSize:13,cursor:mailTo?"pointer":"default",opacity:mailTo?1:0.5}}>
                     {mailSent?"✓ Trimis!":mailSending?"Se trimite...":"📤 Trimite raportul"}
                   </button>
-                  {mailError&&<div style={{marginTop:10,padding:"10px 12px",background:"#fef2f2",border:"1.5px solid #fca5a5",borderRadius:8,fontSize:12,color:"#dc2626"}}><strong>Eroare:</strong> {mailError}</div>}
                 </div>
               )}
               {mailTab==="schedule" && (
