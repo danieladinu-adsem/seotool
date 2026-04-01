@@ -47,6 +47,7 @@ function getCTR(pos) {
   return 0.001;
 }
 function fmtN(n){return n>=1000000?(n/1000000).toFixed(1)+"M":n>=1000?(n/1000).toFixed(1)+"K":Math.round(n).toString();}
+function cleanUrl(url){if(!url)return url;try{const u=new URL(url);[...u.searchParams.keys()].filter(k=>k.startsWith('srsl')).forEach(k=>u.searchParams.delete(k));return u.searchParams.toString()?u.toString():u.origin+u.pathname;}catch{return url.replace(/([?&])srsl[^&]*/g,(m,sep)=>sep==='?'?'':'').replace(/\?$/,'').replace(/&&/g,'&');}}
 function fmtRON(n){return fmtN(n)+" RON";}
 
 const USERS=[{username:"Daniela",password:"Parolaseotool13122012."}];
@@ -428,7 +429,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
     }
     saveAndUpdate((projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.filter(k=>k.id!==kwId)}));
   };
-  const updateUrl=(projId,kwId,url)=>saveAndUpdate((projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.map(k=>k.id!==kwId?k:{...k,url})}));
+  const updateUrl=(projId,kwId,url)=>saveAndUpdate((projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.map(k=>k.id!==kwId?k:{...k,url:cleanUrl(url)})}));
   const deleteProject=async projId=>{
     if(supabase&&userId){
       const proj=(projects||[]).find(p=>p.id===projId);
@@ -469,7 +470,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
         const res=await fetch('/api/rankings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw.keyword,url:proj.url,device:activeDevice,location_code:proj.location_code||2642,se_domain:proj.se_domain||'google.ro'})});
         const data=await res.json();
         const newPos=data.position??null;
-        const rankUrl=data.url||kw.url||'';
+        const rankUrl=cleanUrl(data.url||kw.url||'');
         const posField=activeDevice==='mobile'?'position_mobile':'position_desktop';
         if(supabase){
           await supabase.from('keywords').update({[posField]:newPos,position:newPos??kw.position,url:rankUrl}).eq('id',String(kw.id));
@@ -500,7 +501,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
       const data=await res.json();
       console.log('[rankings response]',kw.keyword,'pos:',data.position,'debug:',JSON.stringify(data.debug));
       const newPos=data.position??null;
-      const rankUrl=data.url||kw.url||'';
+      const rankUrl=cleanUrl(data.url||kw.url||'');
       const posField=activeDevice==='mobile'?'position_mobile':'position_desktop';
       if(supabase){
         const{error:kwErr}=await supabase.from('keywords').update({[posField]:newPos,position:newPos??kw.position,url:rankUrl}).eq('id',String(kw.id));
