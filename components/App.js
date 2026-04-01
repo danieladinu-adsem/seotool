@@ -1246,6 +1246,7 @@ function RaportSEO({ projects }) {
   const [mailMsg, setMailMsg] = useState("");
   const [mailSending, setMailSending] = useState(false);
   const [mailSent, setMailSent] = useState(false);
+  const [mailError, setMailError] = useState('');
   const [scheduleDay, setScheduleDay] = useState("1");
   const [scheduleFreq, setScheduleFreq] = useState("monthly");
   const [scheduleEmail, setScheduleEmail] = useState("");
@@ -1299,9 +1300,9 @@ function RaportSEO({ projects }) {
   const handleSendMail = async () => {
     if(!mailTo) return;
     setMailSending(true);
+    setMailError('');
     try {
       const reportHtml = reportRef.current?.innerHTML || '';
-      console.log('sending:', { to: mailTo, subject: mailSubject, reportHtml: reportHtml.slice(0, 100) });
       if (!reportHtml) {
         throw new Error('Raportul nu a fost generat. Selectează un proiect și încearcă din nou.');
       }
@@ -1315,7 +1316,7 @@ function RaportSEO({ projects }) {
       setMailSent(true);
       setTimeout(() => setMailSent(false), 3000);
     } catch (e) {
-      alert(`Eroare: ${e.message}`);
+      setMailError(e.message);
     } finally {
       setMailSending(false);
     }
@@ -1469,6 +1470,7 @@ function RaportSEO({ projects }) {
                     style={{width:"100%",padding:"10px",background:mailSent?C.green:mailSending?C.grayMid:C.orange,color:C.white,border:"none",borderRadius:8,fontWeight:700,fontSize:13,cursor:mailTo?"pointer":"default",opacity:mailTo?1:0.5}}>
                     {mailSent?"✓ Trimis!":mailSending?"Se trimite...":"📤 Trimite raportul"}
                   </button>
+                  {mailError&&<div style={{marginTop:10,padding:"10px 12px",background:"#fef2f2",border:"1.5px solid #fca5a5",borderRadius:8,fontSize:12,color:"#dc2626"}}><strong>Eroare:</strong> {mailError}</div>}
                 </div>
               )}
               {mailTab==="schedule" && (

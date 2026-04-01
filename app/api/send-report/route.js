@@ -37,8 +37,10 @@ export async function POST(request) {
   </body>
 </html>`;
 
+    const fromAddress = process.env.RESEND_FROM || 'onboarding@resend.dev';
+
     const { data, error } = await resend.emails.send({
-      from: 'SEO Tool <onboarding@resend.dev>',
+      from: `SEO Tool <${fromAddress}>`,
       to,
       subject,
       html: htmlBody,
@@ -46,7 +48,11 @@ export async function POST(request) {
 
     if (error) {
       console.error('Resend error:', JSON.stringify(error));
-      return Response.json({ error: error.message || 'Eroare la trimitere' }, { status: 500 });
+      const msg = error.message || 'Eroare la trimitere';
+      const hint = fromAddress === 'onboarding@resend.dev'
+        ? ' (domeniu implicit Resend — poate trimite doar la emailul contului Resend. Adaugă RESEND_FROM cu un domeniu verificat în Vercel.)'
+        : '';
+      return Response.json({ error: msg + hint }, { status: 500 });
     }
 
     return Response.json({ success: true, id: data?.id });
