@@ -513,6 +513,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
       const history=[...prevHistory,{date:today,position:newPos}];
       const updated=(projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.map(k=>k.id!==kw.id?k:{...k,[posField]:newPos,position:newPos??kw.position,url:rankUrl,history})});
       setProjects(updated);
+      onProjectsLoaded&&onProjectsLoaded(updated);
     }catch(e){console.error('checkSingleKeyword error',kw.keyword,e.message);}
     finally{setCheckingKwIds(prev=>{const s=new Set(prev);s.delete(kw.id);return s;});}
   };
@@ -529,6 +530,7 @@ function RankTracker({pendingKeywords,onPendingConsumed,onProjectsLoaded,initial
     const history=[...prevHistory,{date:today,position:pos}];
     const updated=(projects||[]).map(p=>p.id!==projId?p:{...p,keywords:p.keywords.map(k=>k.id!==kw.id?k:{...k,[posField]:pos,position:pos,position_override:pos,history})});
     setProjects(updated);
+    onProjectsLoaded&&onProjectsLoaded(updated);
     setEditingPosKwId(null);setEditingPosVal("");
   };
   const [editingInitKwId,setEditingInitKwId]=useState(null);
@@ -1238,7 +1240,7 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
   );
 }
 
-function RaportSEO({ projects }) {
+function RaportSEO({ projects, onProjectsLoaded }) {
   const now = new Date();
   const prevMonth = new Date(now.getFullYear(), now.getMonth()-1, 1);
 
@@ -1258,7 +1260,11 @@ function RaportSEO({ projects }) {
   const [localProjects, setLocalProjects] = useState(projects);
   useEffect(()=>setLocalProjects(projects),[projects]);
   const handleKeywordUpdate = (kwId, updates) => {
-    setLocalProjects(prev=>(prev||[]).map(p=>({...p,keywords:(p.keywords||[]).map(k=>k.id===kwId?{...k,...updates}:k)})));
+    setLocalProjects(prev=>{
+      const next=(prev||[]).map(p=>({...p,keywords:(p.keywords||[]).map(k=>k.id===kwId?{...k,...updates}:k)}));
+      onProjectsLoaded&&onProjectsLoaded(next);
+      return next;
+    });
   };
   const [mailTab, setMailTab] = useState("manual");
   const [mailTo, setMailTo] = useState("");
@@ -1690,7 +1696,7 @@ export default function App() {
     if (page==="blog")     return <BlogTopics/>;
     if (page==="rank")     return <RankTracker pendingKeywords={pendingKeywords} onPendingConsumed={()=>setPendingKeywords([])} onProjectsLoaded={setTrackerProjects} initialProjectId={selectedProjectId} userId={loggedUser}/>;
     if (page==="forecast") return <Forecasting/>;
-    if (page==="report")   return <RaportSEO projects={trackerProjects}/>;
+    if (page==="report")   return <RaportSEO projects={trackerProjects} onProjectsLoaded={setTrackerProjects}/>;
     if (page==="updates")  return <GoogleUpdates/>;
     return null;
   };
