@@ -49,29 +49,12 @@ export async function POST(request) {
 
   const position = found ? (found.rank_group ?? found.rank_absolute ?? null) : null;
   const domainMatches = allWithUrl.filter(i => domainMatch(i.url)).map(i => ({ url: i.url, type: i.type, rg: i.rank_group, ra: i.rank_absolute }));
-
-  // Debug: toate itemele organice cu rank_absolute 15-35 ca să vedem ce e în jur de poziția 23
-  const organicItems = items.filter(i => i.type === 'organic');
-  const itemsAround20_35 = organicItems
-    .filter(i => i.rank_absolute >= 15 && i.rank_absolute <= 40)
-    .map(i => ({ ra: i.rank_absolute, rg: i.rank_group, url: i.url, domain: extractDomain(i.url) }));
-
-  console.log('[rankings]', keyword, 'trackedDomain:', trackedDomain, 'found:', found ? `#${position}` : 'null',
-    'totalItems:', items.length, 'organicItems:', organicItems.length,
-    'domainMatches:', domainMatches.length,
-    'items15-40:', JSON.stringify(itemsAround20_35));
+  console.log('[rankings]', keyword, 'trackedDomain:', trackedDomain, 'found:', found ? `#${position}` : 'null', 'organicItems:', allWithUrl.filter(i=>i.type==='organic').length, 'domainMatches:', domainMatches.length);
 
   return Response.json({
     position,
     url: found ? found.url : null,
-    debug: {
-      trackedDomain,
-      totalItems: items.length,
-      totalWithUrl: allWithUrl.length,
-      organicCount: organicItems.length,
-      domainMatches,
-      itemsAround15_40: itemsAround20_35,
-    },
+    debug: { trackedDomain, totalWithUrl: allWithUrl.length, domainMatches },
   });
   } catch (e) {
     console.error('[rankings] error:', e.message);
