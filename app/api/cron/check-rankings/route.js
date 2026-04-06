@@ -48,8 +48,9 @@ async function getRanking(keyword, url, location_code, se_domain) {
   }
 }
 
-const BATCH_SIZE = parseInt(process.env.CRON_BATCH_SIZE || '3');
-const DELAY_MS = 200; // delay între cereri DataForSEO
+const BATCH_SIZE = parseInt(process.env.CRON_BATCH_SIZE || '9');   // keywords per run
+const PARALLEL_SIZE = parseInt(process.env.CRON_PARALLEL || '3');   // cereri simultane DataForSEO
+const DELAY_MS = 300; // delay între grupuri paralele
 
 export async function GET(request) {
   const headerSecret = request.headers.get('x-cron-secret');
@@ -123,51 +124,56 @@ export async function GET(request) {
     details: [],
   };
 
-  for (const { kw, project } of batch) {
-    try {
-      const { pos, organicCount, fetchError } = await getRanking(kw.keyword, project.url, project.location_code, project.se_domain);
+  // Împarte batch-ul în grupuri de PARALLEL_SIZE și procesează fiecare grup în paralel
+  for (let i = 0; i < batch.length; i += PARALLEL_SIZE) {
+    const chunk = batch.slice(i, i + PARALLEL_SIZE);
 
-      if (fetchError) {
+    await Promise.all(chunk.map(async ({ kw, project }) => {
+      try {
+        const { pos, organicCount, fetchError } = await getRanking(kw.keyword, project.url, project.location_code, project.se_domain);
+
+        if (fetchError) {
+          results.errors++;
+          results.details.push({ keyword: kw.keyword, status: 'fetch_error', error: fetchError });
+          return;
+        }
+
+        const { error: kwUpdateErr } = await supabase
+          .from('keywords')
+          .update({ position_desktop: pos, position: pos })
+          .eq('id', kw.id);
+
+        if (kwUpdateErr) {
+          console.error('[cron] eroare update keyword', kw.keyword, kwUpdateErr);
+          results.supabaseErrors++;
+        }
+
+        const { error: histUpsertErr } = await supabase
+          .from('keyword_history')
+          .upsert(
+            { keyword_id: kw.id, position: pos, date: today },
+            { onConflict: 'keyword_id,date' }
+          );
+
+        if (histUpsertErr) {
+          console.error('[cron] eroare upsert history', kw.keyword, histUpsertErr);
+          results.supabaseErrors++;
+          results.details.push({ keyword: kw.keyword, status: 'history_error', error: histUpsertErr.message, code: histUpsertErr.code, pos });
+        } else {
+          results.updated++;
+          if (pos != null) results.found++;
+          else results.notFound++;
+          results.details.push({ keyword: kw.keyword, status: 'ok', pos, organicCount });
+        }
+      } catch (e) {
         results.errors++;
-        results.details.push({ keyword: kw.keyword, status: 'fetch_error', error: fetchError });
-        continue;
+        results.details.push({ keyword: kw.keyword, status: 'error', error: e.message });
       }
+    }));
 
-      // Actualizează câmpul curent în keywords
-      const { error: kwUpdateErr } = await supabase
-        .from('keywords')
-        .update({ position_desktop: pos, position: pos })
-        .eq('id', kw.id);
-
-      if (kwUpdateErr) {
-        console.error('[cron] eroare update keyword', kw.keyword, kwUpdateErr);
-        results.supabaseErrors++;
-      }
-
-      // Salvează în history întotdeauna (null = verificat dar negăsit în top 100)
-      const { error: histUpsertErr } = await supabase
-        .from('keyword_history')
-        .upsert(
-          { keyword_id: kw.id, position: pos, date: today },
-          { onConflict: 'keyword_id,date' }
-        );
-
-      if (histUpsertErr) {
-        console.error('[cron] eroare upsert history', kw.keyword, histUpsertErr);
-        results.supabaseErrors++;
-        results.details.push({ keyword: kw.keyword, status: 'history_error', error: histUpsertErr.message, code: histUpsertErr.code, pos });
-      } else {
-        results.updated++;
-        if (pos != null) results.found++;
-        else results.notFound++;
-        results.details.push({ keyword: kw.keyword, status: 'ok', pos, organicCount });
-      }
-
-    } catch (e) {
-      results.errors++;
-      results.details.push({ keyword: kw.keyword, status: 'error', error: e.message });
+    if (i + PARALLEL_SIZE < batch.length) {
+      await new Promise(r => setTimeout(r, DELAY_MS));
     }
-    await new Promise(r => setTimeout(r, DELAY_MS));
   }
 
   const allDone = checkedIds.size + results.updated >= allTasks.length;
