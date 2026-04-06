@@ -48,6 +48,9 @@ async function getRanking(keyword, url, location_code, se_domain) {
   }
 }
 
+const BATCH_SIZE = parseInt(process.env.CRON_BATCH_SIZE || '5');
+const DELAY_MS = 300; // delay între cereri DataForSEO
+
 export async function GET(request) {
   const headerSecret = request.headers.get('x-cron-secret');
   const authHeader = request.headers.get('authorization');
@@ -103,8 +106,9 @@ export async function GET(request) {
 
   const checkedIds = new Set((todayHistory || []).map(h => String(h.keyword_id)));
 
-  // Procesează DOAR keywords-urile care nu au fost încă verificate azi
+  // Procesează DOAR keywords-urile care nu au fost încă verificate azi, max BATCH_SIZE
   const remaining = allTasks.filter(t => !checkedIds.has(String(t.kw.id)));
+  const batch = remaining.slice(0, BATCH_SIZE);
 
   const results = {
     updated: 0,
@@ -115,17 +119,11 @@ export async function GET(request) {
     skipped: checkedIds.size,
     total: allTasks.length,
     remaining: remaining.length,
+    batchSize: batch.length,
     details: [],
   };
 
-  const startTime = Date.now();
-  const MAX_MS = 250000; // 4 minute
-
-  for (const { kw, project } of remaining) {
-    if (Date.now() - startTime > MAX_MS) {
-      results.details.push({ status: 'timeout_guard', processed: results.updated + results.errors });
-      break;
-    }
+  for (const { kw, project } of batch) {
     try {
       const { pos, organicCount, fetchError } = await getRanking(kw.keyword, project.url, project.location_code, project.se_domain);
 
@@ -169,6 +167,7 @@ export async function GET(request) {
       results.errors++;
       results.details.push({ keyword: kw.keyword, status: 'error', error: e.message });
     }
+    await new Promise(r => setTimeout(r, DELAY_MS));
   }
 
   const allDone = checkedIds.size + results.updated >= allTasks.length;
