@@ -48,9 +48,9 @@ async function getRanking(keyword, url, location_code, se_domain) {
   }
 }
 
-const BATCH_SIZE = parseInt(process.env.CRON_BATCH_SIZE || '9');   // keywords per run
-const PARALLEL_SIZE = parseInt(process.env.CRON_PARALLEL || '3');   // cereri simultane DataForSEO
-const DELAY_MS = 300; // delay între grupuri paralele
+const PARALLEL_SIZE = parseInt(process.env.CRON_PARALLEL || '3'); // cereri simultane DataForSEO
+const TIME_BUDGET_MS = 8000; // procesează cât poate în 8s, apoi se oprește
+const DELAY_MS = 200; // delay între grupuri paralele
 
 export async function GET(request) {
   const headerSecret = request.headers.get('x-cron-secret');
@@ -107,9 +107,8 @@ export async function GET(request) {
 
   const checkedIds = new Set((todayHistory || []).map(h => String(h.keyword_id)));
 
-  // Procesează DOAR keywords-urile care nu au fost încă verificate azi, max BATCH_SIZE
+  // Procesează DOAR keywords-urile care nu au fost încă verificate azi
   const remaining = allTasks.filter(t => !checkedIds.has(String(t.kw.id)));
-  const batch = remaining.slice(0, BATCH_SIZE);
 
   const results = {
     updated: 0,
@@ -120,13 +119,14 @@ export async function GET(request) {
     skipped: checkedIds.size,
     total: allTasks.length,
     remaining: remaining.length,
-    batchSize: batch.length,
     details: [],
   };
 
-  // Împarte batch-ul în grupuri de PARALLEL_SIZE și procesează fiecare grup în paralel
-  for (let i = 0; i < batch.length; i += PARALLEL_SIZE) {
-    const chunk = batch.slice(i, i + PARALLEL_SIZE);
+  // Procesează în grupuri paralele până se epuizează bugetul de timp
+  const startTime = Date.now();
+  for (let i = 0; i < remaining.length; i += PARALLEL_SIZE) {
+    if (Date.now() - startTime > TIME_BUDGET_MS) break;
+    const chunk = remaining.slice(i, i + PARALLEL_SIZE);
 
     await Promise.all(chunk.map(async ({ kw, project }) => {
       try {
@@ -171,7 +171,7 @@ export async function GET(request) {
       }
     }));
 
-    if (i + PARALLEL_SIZE < batch.length) {
+    if (i + PARALLEL_SIZE < remaining.length) {
       await new Promise(r => setTimeout(r, DELAY_MS));
     }
   }
