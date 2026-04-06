@@ -47,7 +47,7 @@ export async function POST(request) {
   let found = allWithUrl.find(item => item.type === 'organic' && domainMatch(item.url));
   if (!found) found = allWithUrl.find(item => domainMatch(item.url));
 
-  const position = found ? (found.rank_group || found.rank_absolute) : null;
+  const position = found ? (found.rank_group ?? found.rank_absolute ?? null) : null;
   const domainMatches = allWithUrl.filter(i => domainMatch(i.url)).map(i => ({ url: i.url, type: i.type, rg: i.rank_group, ra: i.rank_absolute }));
   console.log('[rankings]', keyword, 'trackedDomain:', trackedDomain, 'found:', found ? `#${position}` : 'null', 'organicItems:', allWithUrl.filter(i=>i.type==='organic').length, 'domainMatches:', domainMatches.length);
 

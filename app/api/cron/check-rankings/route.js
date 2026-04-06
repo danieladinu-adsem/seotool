@@ -40,7 +40,7 @@ async function getRanking(keyword, url, location_code, se_domain) {
     if (!found) found = allWithUrl.find(i => domainMatch(trackedDomain, i.url));
 
     return {
-      pos: found ? (found.rank_group || found.rank_absolute) : null,
+      pos: found ? (found.rank_group ?? found.rank_absolute ?? null) : null,
       organicCount: allWithUrl.filter(i => i.type === 'organic').length,
     };
   } catch (e) {
