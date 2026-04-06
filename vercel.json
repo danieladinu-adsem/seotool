@@ -10,7 +10,13 @@
     {"path": "/api/cron/check-rankings", "schedule": "35 6 * * *"},
     {"path": "/api/cron/check-rankings", "schedule": "40 6 * * *"},
     {"path": "/api/cron/check-rankings", "schedule": "45 6 * * *"},
-    {"path": "/api/cron/monthly-report", "schedule": "0 7 * * *"}
+    {"path": "/api/cron/check-rankings", "schedule": "50 6 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "55 6 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "0 7 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "5 7 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "10 7 * * *"},
+    {"path": "/api/cron/check-rankings", "schedule": "15 7 * * *"},
+    {"path": "/api/cron/monthly-report", "schedule": "30 7 * * *"}
   ],
   "functions": {
     "app/api/cron/check-rankings/route.js": {

@@ -48,8 +48,8 @@ async function getRanking(keyword, url, location_code, se_domain) {
   }
 }
 
-const BATCH_SIZE = parseInt(process.env.CRON_BATCH_SIZE || '5');
-const DELAY_MS = 300; // delay între cereri DataForSEO
+const BATCH_SIZE = parseInt(process.env.CRON_BATCH_SIZE || '3');
+const DELAY_MS = 200; // delay între cereri DataForSEO
 
 export async function GET(request) {
   const headerSecret = request.headers.get('x-cron-secret');
