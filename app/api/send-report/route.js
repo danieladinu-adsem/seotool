@@ -37,7 +37,7 @@ export async function POST(request) {
   </body>
 </html>`;
 
-    const fromAddress = process.env.RESEND_FROM || 'onboarding@resend.dev';
+    const fromAddress = process.env.RESEND_FROM || 'noreply@adsem.ro';
 
     const { data, error } = await resend.emails.send({
       from: `SEO Tool <${fromAddress}>`,
