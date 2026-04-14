@@ -280,10 +280,10 @@ return(<div style={{background:C.white,borderRadius:12,border:`1px solid ${C.bor
 // ── Projects Home ─────────────────────────────────────────────────────────────
 function ProjectsHome({ projects, onSelectProject, onNewProject }) {
   const getProjectStats = p => {
-    const pos = p.keywords.map(k => k.position);
-    const avg = pos.length ? Math.round(pos.reduce((a,b)=>a+b,0)/pos.length) : null;
-    const top3 = pos.filter(p=>p<=3).length;
-    const top10 = pos.filter(p=>p<=10).length;
+    const validPos = p.keywords.map(k => k.position).filter(p => p != null && p > 0);
+    const avg = validPos.length ? Math.round(validPos.reduce((a,b)=>a+b,0)/validPos.length) : null;
+    const top3 = validPos.filter(p=>p<=3).length;
+    const top10 = validPos.filter(p=>p<=10).length;
     return { avg, top3, top10 };
   };
 
