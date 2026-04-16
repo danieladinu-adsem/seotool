@@ -6,24 +6,50 @@ export async function POST(request) {
     `${process.env.DATAFORSEO_LOGIN}:${process.env.DATAFORSEO_PASSWORD}`
   ).toString('base64');
 
-  // Endpoint care gaseste automat toate variatiile similare
-  const response = await fetch(
-    'https://api.dataforseo.com/v3/keywords_data/google_ads/keywords_for_keywords/live',
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify([{
-        keywords: [query],
-        location_code: location_code || 2642,
-        language_code: language_code || 'ro',
-        limit: 200,
-      }]),
-    }
-  );
+  const headers = {
+    'Authorization': `Basic ${credentials}`,
+    'Content-Type': 'application/json',
+  };
 
-  const data = await response.json();
-  return Response.json(data);
+  const baseParams = {
+    location_code: location_code || 2642,
+    language_code: language_code || 'ro',
+    limit: 1000,
+  };
+
+  // Apeluri paralele: keyword_suggestions + keywords_for_keywords
+  const [suggestionsRes, forKeywordsRes] = await Promise.allSettled([
+    fetch('https://api.dataforseo.com/v3/keywords_data/google_ads/keyword_suggestions/live', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify([{ ...baseParams, keyword: query }]),
+    }).then(r => r.json()),
+    fetch('https://api.dataforseo.com/v3/keywords_data/google_ads/keywords_for_keywords/live', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify([{ ...baseParams, keywords: [query] }]),
+    }).then(r => r.json()),
+  ]);
+
+  const extractItems = result =>
+    result.status === 'fulfilled'
+      ? result.value?.tasks?.[0]?.result || []
+      : [];
+
+  const items1 = extractItems(suggestionsRes);
+  const items2 = extractItems(forKeywordsRes);
+
+  // Merge + dedup dupa keyword (keyword_suggestions are prioritate)
+  const seen = new Map();
+  for (const item of [...items1, ...items2]) {
+    const key = item.keyword?.toLowerCase();
+    if (key && !seen.has(key)) seen.set(key, item);
+  }
+
+  const merged = Array.from(seen.values());
+
+  // Returnam in acelasi format ca inainte
+  return Response.json({
+    tasks: [{ result: merged }],
+  });
 }
