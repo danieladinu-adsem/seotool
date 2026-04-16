@@ -34,10 +34,7 @@ export async function POST(request) {
   // DEBUG - sterge dupa diagnosticare
   const sVal = suggestionsRes.status === 'fulfilled' ? suggestionsRes.value : null;
   const fVal = forKeywordsRes.status === 'fulfilled' ? forKeywordsRes.value : null;
-  console.log('[keywords] suggestions status:', suggestionsRes.status);
-  console.log('[keywords] suggestions task status:', sVal?.tasks?.[0]?.status_code, sVal?.tasks?.[0]?.status_message);
-  console.log('[keywords] suggestions result[0] keys:', sVal?.tasks?.[0]?.result?.[0] ? Object.keys(sVal.tasks[0].result[0]) : 'no result[0]');
-  console.log('[keywords] suggestions items count:', sVal?.tasks?.[0]?.result?.[0]?.items?.length ?? 'n/a');
+  console.log('[keywords] suggestions raw:', JSON.stringify(sVal).slice(0, 800));
   console.log('[keywords] forKeywords status:', forKeywordsRes.status);
   console.log('[keywords] forKeywords task status:', fVal?.tasks?.[0]?.status_code, fVal?.tasks?.[0]?.status_message);
   console.log('[keywords] forKeywords result count:', fVal?.tasks?.[0]?.result?.length ?? 'n/a');
