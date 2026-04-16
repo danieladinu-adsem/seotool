@@ -31,13 +31,16 @@ export async function POST(request) {
     }).then(r => r.json()),
   ]);
 
-  const extractItems = result =>
-    result.status === 'fulfilled'
-      ? result.value?.tasks?.[0]?.result || []
+  // keyword_suggestions: tasks[0].result[0].items
+  // keywords_for_keywords: tasks[0].result (array direct)
+  const items1 =
+    suggestionsRes.status === 'fulfilled'
+      ? suggestionsRes.value?.tasks?.[0]?.result?.[0]?.items || []
       : [];
-
-  const items1 = extractItems(suggestionsRes);
-  const items2 = extractItems(forKeywordsRes);
+  const items2 =
+    forKeywordsRes.status === 'fulfilled'
+      ? forKeywordsRes.value?.tasks?.[0]?.result || []
+      : [];
 
   // Merge + dedup dupa keyword (keyword_suggestions are prioritate)
   const seen = new Map();
