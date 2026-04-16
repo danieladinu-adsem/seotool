@@ -31,6 +31,17 @@ export async function POST(request) {
     }).then(r => r.json()),
   ]);
 
+  // DEBUG - sterge dupa diagnosticare
+  const sVal = suggestionsRes.status === 'fulfilled' ? suggestionsRes.value : null;
+  const fVal = forKeywordsRes.status === 'fulfilled' ? forKeywordsRes.value : null;
+  console.log('[keywords] suggestions status:', suggestionsRes.status);
+  console.log('[keywords] suggestions task status:', sVal?.tasks?.[0]?.status_code, sVal?.tasks?.[0]?.status_message);
+  console.log('[keywords] suggestions result[0] keys:', sVal?.tasks?.[0]?.result?.[0] ? Object.keys(sVal.tasks[0].result[0]) : 'no result[0]');
+  console.log('[keywords] suggestions items count:', sVal?.tasks?.[0]?.result?.[0]?.items?.length ?? 'n/a');
+  console.log('[keywords] forKeywords status:', forKeywordsRes.status);
+  console.log('[keywords] forKeywords task status:', fVal?.tasks?.[0]?.status_code, fVal?.tasks?.[0]?.status_message);
+  console.log('[keywords] forKeywords result count:', fVal?.tasks?.[0]?.result?.length ?? 'n/a');
+
   // keyword_suggestions: tasks[0].result[0].items
   // keywords_for_keywords: tasks[0].result (array direct)
   const items1 =
@@ -50,6 +61,7 @@ export async function POST(request) {
   }
 
   const merged = Array.from(seen.values());
+  console.log('[keywords] items1 count:', items1.length, '| items2 count:', items2.length, '| merged:', merged.length);
 
   // Returnam in acelasi format ca inainte
   return Response.json({
