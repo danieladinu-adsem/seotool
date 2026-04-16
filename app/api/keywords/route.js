@@ -17,12 +17,12 @@ export async function POST(request) {
     limit: 1000,
   };
 
-  // Apeluri paralele: keyword_suggestions + keywords_for_keywords
+  // Apeluri paralele: dataforseo_labs/keyword_suggestions + keywords_for_keywords
   const [suggestionsRes, forKeywordsRes] = await Promise.allSettled([
-    fetch('https://api.dataforseo.com/v3/keywords_data/google_ads/keyword_suggestions/live', {
+    fetch('https://api.dataforseo.com/v3/dataforseo_labs/google/keyword_suggestions/live', {
       method: 'POST',
       headers,
-      body: JSON.stringify([{ ...baseParams, keyword: query }]),
+      body: JSON.stringify([{ ...baseParams, keyword: query, include_seed_keyword: true }]),
     }).then(r => r.json()),
     fetch('https://api.dataforseo.com/v3/keywords_data/google_ads/keywords_for_keywords/live', {
       method: 'POST',
@@ -31,20 +31,18 @@ export async function POST(request) {
     }).then(r => r.json()),
   ]);
 
-  // DEBUG - sterge dupa diagnosticare
-  const sVal = suggestionsRes.status === 'fulfilled' ? suggestionsRes.value : null;
-  const fVal = forKeywordsRes.status === 'fulfilled' ? forKeywordsRes.value : null;
-  console.log('[keywords] suggestions raw:', JSON.stringify(sVal).slice(0, 800));
-  console.log('[keywords] forKeywords status:', forKeywordsRes.status);
-  console.log('[keywords] forKeywords task status:', fVal?.tasks?.[0]?.status_code, fVal?.tasks?.[0]?.status_message);
-  console.log('[keywords] forKeywords result count:', fVal?.tasks?.[0]?.result?.length ?? 'n/a');
-
-  // keyword_suggestions: tasks[0].result[0].items
-  // keywords_for_keywords: tasks[0].result (array direct)
-  const items1 =
+  // dataforseo_labs items au volumul in keyword_info — normalizam la acelasi format
+  const rawLabsItems =
     suggestionsRes.status === 'fulfilled'
       ? suggestionsRes.value?.tasks?.[0]?.result?.[0]?.items || []
       : [];
+  const items1 = rawLabsItems.map(item => ({
+    keyword: item.keyword,
+    search_volume: item.keyword_info?.search_volume || 0,
+    monthly_searches: item.keyword_info?.monthly_searches || [],
+  }));
+
+  // keywords_for_keywords: tasks[0].result (array direct, format deja corect)
   const items2 =
     forKeywordsRes.status === 'fulfilled'
       ? forKeywordsRes.value?.tasks?.[0]?.result || []
@@ -58,7 +56,6 @@ export async function POST(request) {
   }
 
   const merged = Array.from(seen.values());
-  console.log('[keywords] items1 count:', items1.length, '| items2 count:', items2.length, '| merged:', merged.length);
 
   // Returnam in acelasi format ca inainte
   return Response.json({
