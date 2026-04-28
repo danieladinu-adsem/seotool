@@ -878,7 +878,7 @@ function Forecasting() {
       await pptx.writeFile({ fileName: `SEO_Forecast_${SCEN_LABEL[scenario]}_${new Date().toISOString().slice(0,10)}.pptx` });
     } catch (e) {
       console.error('PPTX export error:', e);
-      alert('Eroare la generarea fișierului PowerPoint. Încearcă din nou.');
+      alert('Eroare: ' + (e?.message || String(e)));
     } finally {
       setExportingPPTX(false);
     }
