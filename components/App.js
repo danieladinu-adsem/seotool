@@ -743,140 +743,170 @@ function Forecasting() {
       pptx.defineLayout({ name: 'WIDE', width: 13.33, height: 7.5 });
       pptx.layout = 'WIDE';
 
-      const BG = '1A2B4A';
-      const ORANGE = 'FF6B2B';
-      const WHITE = 'FFFFFF';
-      const GRAY = 'A0AEC0';
-      const NAVY2 = '2D4270';
+      const NAVY    = '1A2B4A';
+      const ORANGE  = 'FF6B2B';
+      const WHITE   = 'FFFFFF';
+      const GBORDER = 'E2E5EA';
+      const GBG     = 'F5F6F8';
+      const GTEXT   = '6B7280';
+      const GREEN   = '16A34A';
+      const ORLIGHT = 'FFF0EA';
 
+      const W = 13.33;
+      const HDR = 1.75;
+      const PAD = 0.5;
+
+      const siteName = siteUrl
+        ? siteUrl.replace(/https?:\/\/(www\.)?/, '').replace(/\/$/, '')
+        : 'site.ro';
       const avgPos = calcedKws.length
         ? Math.round(calcedKws.reduce((s, k) => s + k.currentPos, 0) / calcedKws.length)
         : 0;
 
-      // ── Slide 1: Situatia actuala ──────────────────────────────────────────
-      const s1 = pptx.addSlide();
-      s1.background = { color: BG };
-      s1.addText('Situația actuală SEO', { x: 0.5, y: 0.25, w: 12, h: 0.6, fontSize: 28, bold: true, color: ORANGE, fontFace: 'Calibri' });
-      s1.addText(`Scenariu: ${SCEN_LABEL[scenario]}  |  Poziție țintă: #${targetPos}  |  ${new Date().toLocaleDateString('ro-RO')}`, { x: 0.5, y: 0.85, w: 12, h: 0.3, fontSize: 12, color: GRAY, fontFace: 'Calibri' });
+      const addHeader = (slide, pill, title, sub) => {
+        slide.background = { color: WHITE };
+        slide.addShape('rect', { x: 0, y: 0, w: W, h: HDR, fill: { color: NAVY }, line: { color: NAVY, pt: 0 } });
+        const pw = Math.max(1.4, pill.length * 0.092 + 0.3);
+        slide.addShape('rect', { x: PAD, y: 0.2, w: pw, h: 0.28, fill: { color: ORANGE }, line: { color: ORANGE, pt: 0 } });
+        slide.addText(pill, { x: PAD, y: 0.2, w: pw, h: 0.28, fontSize: 8.5, bold: true, color: WHITE, align: 'center', valign: 'middle', fontFace: 'Calibri' });
+        slide.addText(title, { x: PAD, y: 0.55, w: W - PAD * 2, h: 0.68, fontSize: 24, bold: true, color: WHITE, fontFace: 'Calibri' });
+        slide.addText(sub,   { x: PAD, y: 1.27, w: W - PAD * 2, h: 0.35, fontSize: 11, color: 'B0BEC5', fontFace: 'Calibri' });
+      };
 
-      const stats1 = [
-        { label: 'Poziție medie', value: avgPos ? `#${avgPos}` : '—' },
-        { label: 'Trafic curent / lună', value: fmtN(totalCurTraffic) },
-        { label: 'Trafic estimat / lună', value: fmtN(totalTgtTraffic) },
-        { label: 'Câștig trafic', value: `+${fmtN(totalGain)}` },
-      ];
-      stats1.forEach((s, i) => {
-        const x = 0.5 + i * 3.15;
-        s1.addShape('rect', { x, y: 1.25, w: 3.0, h: 1.1, fill: { color: NAVY2 }, line: { color: ORANGE, width: 1 } });
-        s1.addText(s.label, { x, y: 1.3, w: 3.0, h: 0.3, fontSize: 9, color: GRAY, align: 'center', fontFace: 'Calibri' });
-        s1.addText(s.value, { x, y: 1.6, w: 3.0, h: 0.55, fontSize: 22, bold: true, color: WHITE, align: 'center', fontFace: 'Calibri' });
+      const addCard = (slide, x, y, w, h, label, value, col) => {
+        slide.addShape('rect', { x, y, w, h, fill: { color: WHITE }, line: { color: GBORDER, pt: 1 } });
+        slide.addText(label, { x: x + 0.15, y: y + 0.13, w: w - 0.3, h: 0.27, fontSize: 9,  color: GTEXT, fontFace: 'Calibri' });
+        slide.addText(value, { x: x + 0.15, y: y + 0.4,  w: w - 0.3, h: 0.52, fontSize: 20, bold: true, color: col, fontFace: 'Calibri' });
+      };
+
+      const MO_LABELS = ['Ian','Feb','Mar','Apr','Mai','Iun','Iul','Aug','Sep','Oct','Nov','Dec'];
+
+      // ── SLIDE 1: Situatia actuala ──────────────────────────────────────────
+      const s1 = pptx.addSlide();
+      addHeader(s1, 'Situația actuală', 'Unde ești acum și unde poți ajunge',
+        `Analiză SEO pentru ${siteName} — pregătită de AdSem`);
+
+      const cW = (W - PAD * 2 - 0.3) / 3;
+      addCard(s1, PAD,                    HDR + 0.2, cW, 1.0, 'Poziție medie actuală',  avgPos ? `#${avgPos}` : '—', ORANGE);
+      addCard(s1, PAD + cW + 0.15,        HDR + 0.2, cW, 1.0, 'Trafic organic lunar',   `${fmtN(totalCurTraffic)} vizitatori`, NAVY);
+      addCard(s1, PAD + (cW + 0.15) * 2, HDR + 0.2, cW, 1.0, 'Potențial nefolosit',    `+${fmtN(totalGain)}/lună`, GREEN);
+
+      s1.addText('CUVINTE CHEIE PRINCIPALE ANALIZATE', {
+        x: PAD, y: HDR + 1.35, w: W - PAD * 2, h: 0.25,
+        fontSize: 8.5, bold: true, color: GTEXT, charSpacing: 0.8, fontFace: 'Calibri',
       });
 
-      const kwRows = calcedKws.slice(0, 13).map(kw => [
-        { text: kw.keyword, options: { color: WHITE, fontSize: 10, fontFace: 'Calibri' } },
-        { text: fmtN(kw.volume), options: { color: GRAY, fontSize: 10, align: 'center', fontFace: 'Calibri' } },
-        { text: `#${kw.currentPos}`, options: { color: GRAY, fontSize: 10, align: 'center', fontFace: 'Calibri' } },
-        { text: `#${targetPos}`, options: { color: ORANGE, bold: true, fontSize: 10, align: 'center', fontFace: 'Calibri' } },
-        { text: `${kw.trafficGain >= 0 ? '+' : ''}${fmtN(kw.trafficGain)}`, options: { color: kw.trafficGain >= 0 ? '16A34A' : 'DC2626', bold: true, fontSize: 10, align: 'center', fontFace: 'Calibri' } },
-      ]);
-      const kwHeader = ['KEYWORD', 'VOLUM', 'POZ. CURENTĂ', 'POZ. ȚINTĂ', 'TRAFIC CÂȘTIGAT'].map(t => ({
-        text: t, options: { bold: true, color: WHITE, fill: NAVY2, fontSize: 9, fontFace: 'Calibri', align: 'center' }
-      }));
-      if (kwRows.length > 0) {
-        s1.addTable([kwHeader, ...kwRows], {
-          x: 0.5, y: 2.45, w: 12.33, colW: [4.5, 1.6, 1.8, 1.8, 2.63],
-          border: { type: 'solid', color: NAVY2, pt: 0.5 },
-          fill: { color: BG },
-          rowH: 0.32,
+      if (calcedKws.length > 0) {
+        const hRow = ['Keyword','Volum lunar','Poziție acum','Potențial'].map(t => ({
+          text: t, options: { bold: true, color: GTEXT, fontSize: 9, fontFace: 'Calibri', fill: { color: GBORDER }, margin: [5,8,5,8] },
+        }));
+        const dRows = calcedKws.slice(0, 9).map(kw => {
+          const pCol = kw.currentPos <= 10 ? '3B82F6' : kw.currentPos <= 20 ? 'F97316' : 'EF4444';
+          const pot  = kw.currentPos > 20 ? 'Top 5' : kw.currentPos > 10 ? 'Top 3' : 'Top 10';
+          const potC = kw.currentPos > 10 ? GREEN : '0D9488';
+          return [
+            { text: kw.keyword,          options: { color: NAVY,  fontSize: 10, fontFace: 'Calibri', margin: [5,8,5,8] } },
+            { text: fmtN(kw.volume),     options: { color: GTEXT, fontSize: 10, fontFace: 'Calibri', align: 'center', margin: [5,8,5,8] } },
+            { text: `#${kw.currentPos}`, options: { color: WHITE, bold: true, fontSize: 10, fontFace: 'Calibri', align: 'center', fill: { color: pCol }, margin: [5,6,5,6] } },
+            { text: pot,                 options: { color: WHITE, bold: true, fontSize: 10, fontFace: 'Calibri', align: 'center', fill: { color: potC }, margin: [5,6,5,6] } },
+          ];
+        });
+        s1.addTable([hRow, ...dRows], {
+          x: PAD, y: HDR + 1.65, w: W - PAD * 2,
+          colW: [5.5, 2.0, 2.0, 2.0],
+          border: { type: 'solid', color: GBORDER, pt: 0.5 },
+          fill: { color: WHITE },
+          rowH: 0.38,
         });
       } else {
-        s1.addText('Niciun keyword adăugat în forecast.', { x: 0.5, y: 3, w: 12, h: 0.5, fontSize: 13, color: GRAY, align: 'center', fontFace: 'Calibri' });
+        s1.addText('Niciun keyword adăugat în forecast.', {
+          x: PAD, y: HDR + 2.5, w: W - PAD * 2, h: 0.5,
+          fontSize: 13, color: GTEXT, align: 'center', fontFace: 'Calibri',
+        });
       }
 
-      // ── Slide 2: Prognoza trafic ───────────────────────────────────────────
+      // ── SLIDE 2: Prognoza trafic ───────────────────────────────────────────
       const s2 = pptx.addSlide();
-      s2.background = { color: BG };
-      s2.addText('Prognoză trafic — evoluție lunară', { x: 0.5, y: 0.25, w: 12, h: 0.6, fontSize: 28, bold: true, color: ORANGE, fontFace: 'Calibri' });
-      s2.addText(`Scenariu ${SCEN_LABEL[scenario]} vs competitor estimat`, { x: 0.5, y: 0.85, w: 12, h: 0.3, fontSize: 12, color: GRAY, fontFace: 'Calibri' });
+      addHeader(s2, 'Prognoză trafic', 'Evoluția estimată în următoarele 12 luni',
+        'Bazată pe pozițiile actuale, volumele de căutare și rata de click organică');
+
+      const mLabels = months.map((_, i) => MO_LABELS[i] || `L${i+1}`);
+      const compVal  = Math.round(totalCurTraffic * 1.5);
 
       s2.addChart('line', [
-        {
-          name: `Trafic organic (${SCEN_LABEL[scenario]})`,
-          labels: months.map(m => `Luna ${m.month}`),
-          values: months.map(m => m.traffic),
-        },
-        {
-          name: 'Competitor (estimat)',
-          labels: months.map(m => `Luna ${m.month}`),
-          values: months.map(m => Math.round(m.traffic * 0.65)),
-        },
+        { name: `${siteName} (prognoză)`, labels: mLabels, values: months.map(m => m.traffic) },
+        { name: 'Competitor principal',   labels: mLabels, values: months.map(() => compVal) },
       ], {
-        x: 0.5, y: 1.25, w: 12.33, h: 5.9,
-        showLegend: true, legendPos: 'b', legendFontSize: 11, legendColor: GRAY,
-        chartColors: ['4FC3F7', ORANGE],
-        lineDataSymbol: 'none', lineSmooth: false,
-        valAxisLabelColor: GRAY, catAxisLabelColor: GRAY,
-        valAxisLineColor: '2D4270', catAxisLineColor: '2D4270',
-        plotAreaFill: { color: NAVY2 },
-        showGridLineMajorX: false,
-        valGridLine: { style: 'dash', color: BG },
+        x: PAD, y: HDR + 0.15, w: W - PAD * 2, h: 3.9,
+        showLegend: true, legendPos: 't', legendFontSize: 10,
+        chartColors: [ORANGE, 'AAAAAA'],
+        lineDataSymbol: 'none',
+        valAxisLabelColor: GTEXT, catAxisLabelColor: GTEXT,
+        plotAreaFill: { color: WHITE },
+        valGridLine: { style: 'dash', color: GBORDER },
       });
 
-      // ── Slide 3: ROI & Valoare ─────────────────────────────────────────────
+      const bW = (W - PAD * 2 - 0.3) / 3;
+      const bY = HDR + 4.25;
+      addCard(s2, PAD,                    bY, bW, 0.9, 'Trafic luna 1',         fmtN(months[0].traffic), NAVY);
+      addCard(s2, PAD + bW + 0.15,        bY, bW, 0.9, 'Trafic luna 6',         fmtN((months[5] || months[months.length-1]).traffic), ORANGE);
+      addCard(s2, PAD + (bW + 0.15) * 2, bY, bW, 0.9, `Trafic luna ${horizon}`, fmtN(finalMonth.traffic), GREEN);
+
+      // ── SLIDE 3: ROI & Valoare ─────────────────────────────────────────────
       const s3 = pptx.addSlide();
-      s3.background = { color: BG };
-      s3.addText('ROI & Valoare estimată', { x: 0.5, y: 0.25, w: 12, h: 0.6, fontSize: 28, bold: true, color: ORANGE, fontFace: 'Calibri' });
-      s3.addText(`Calcul pe ${horizon} luni — Scenariu ${SCEN_LABEL[scenario]}`, { x: 0.5, y: 0.85, w: 12, h: 0.3, fontSize: 12, color: GRAY, fontFace: 'Calibri' });
+      addHeader(s3, 'ROI & Valoare', 'Cât valorează traficul organic pentru afacerea ta',
+        'Calculat pe baza costului echivalent în Google Ads și rata de conversie estimată');
 
-      const stats3 = [
-        { label: `ROI total (${horizon} luni)`, value: `${overallROI}%` },
-        { label: 'Venit total estimat', value: fmtRON(totalRevenue) },
-        { label: `Venit luna ${horizon}`, value: fmtRON(finalMonth.revenue) },
-        { label: 'Cost total SEO', value: fmtRON(totalCost) },
-      ];
-      stats3.forEach((s, i) => {
-        const x = 0.5 + i * 3.15;
-        s3.addShape('rect', { x, y: 1.25, w: 3.0, h: 1.0, fill: { color: NAVY2 }, line: { color: ORANGE, width: 1 } });
-        s3.addText(s.label, { x, y: 1.3, w: 3.0, h: 0.25, fontSize: 8, color: GRAY, align: 'center', fontFace: 'Calibri' });
-        s3.addText(s.value, { x, y: 1.55, w: 3.0, h: 0.5, fontSize: 17, bold: true, color: WHITE, align: 'center', fontFace: 'Calibri' });
+      const cntY = HDR + 0.2;
+      const lW   = 5.2;
+
+      // card stanga cu tabel valori
+      s3.addShape('rect', { x: PAD, y: cntY, w: lW, h: 3.85, fill: { color: GBG }, line: { color: GBORDER, pt: 1 } });
+      s3.addText(`Valoare lunară estimată (luna ${horizon})`, {
+        x: PAD + 0.2, y: cntY + 0.18, w: lW - 0.4, h: 0.32,
+        fontSize: 10, bold: true, color: NAVY, fontFace: 'Calibri',
       });
+      [
+        ['Vizitatori estimați',                   fmtN(finalMonth.traffic)],
+        ['CPC mediu echivalent',                  `${(avgOrder * effectiveConvRate / 100).toFixed(2)} lei`],
+        [`Conversii estimate (${effectiveConvRate}%)`, fmtN(finalMonth.conversions)],
+        ['Valoare comandă medie',                 `${fmtN(avgOrder)} lei`],
+      ].forEach(([lbl, val], i) => {
+        const ry = cntY + 0.65 + i * 0.52;
+        s3.addText(lbl, { x: PAD + 0.2, y: ry, w: lW - 0.4, h: 0.32, fontSize: 10, color: GTEXT, fontFace: 'Calibri' });
+        s3.addText(val, { x: PAD + 0.2, y: ry, w: lW - 0.4, h: 0.32, fontSize: 10, color: NAVY, align: 'right', fontFace: 'Calibri' });
+      });
+      s3.addShape('rect', { x: PAD + 0.2, y: cntY + 2.78, w: lW - 0.4, h: 0.02, fill: { color: GBORDER }, line: { color: GBORDER, pt: 0 } });
+      s3.addText('Venit estimat din SEO', { x: PAD + 0.2, y: cntY + 2.88, w: lW - 0.4, h: 0.42, fontSize: 11, bold: true, color: NAVY, fontFace: 'Calibri' });
+      s3.addText(fmtRON(finalMonth.revenue), { x: PAD + 0.2, y: cntY + 2.88, w: lW - 0.4, h: 0.42, fontSize: 13, bold: true, color: NAVY, align: 'right', fontFace: 'Calibri' });
 
-      // Bar chart venit
+      // grafic bar dreapta
+      const keyIdx = [0, 2, 5, 8, 11].filter(i => i < months.length);
       s3.addChart('bar', [{
-        name: 'Venit estimat (RON)',
-        labels: months.map(m => `L${m.month}`),
-        values: months.map(m => m.revenue),
+        name: 'Venit estimat',
+        labels: keyIdx.map(i => `Luna ${i + 1}`),
+        values: keyIdx.map(i => months[i].revenue),
       }], {
-        x: 0.5, y: 2.35, w: 7.8, h: 4.9,
-        barDir: 'col', barGrouping: 'clustered',
+        x: PAD + lW + 0.3, y: cntY, w: W - PAD * 2 - lW - 0.3, h: 3.85,
+        barDir: 'col',
         chartColors: [ORANGE],
         showLegend: false,
-        valAxisLabelColor: GRAY, catAxisLabelColor: GRAY,
-        valAxisLineColor: '2D4270', catAxisLineColor: '2D4270',
-        plotAreaFill: { color: NAVY2 },
-        dataLabelFontSize: 7, dataLabelColor: WHITE, showValue: true,
-        valGridLine: { style: 'dash', color: BG },
+        valAxisLabelColor: GTEXT, catAxisLabelColor: GTEXT,
+        plotAreaFill: { color: WHITE },
+        valGridLine: { style: 'solid', color: GBORDER },
+        showValue: false,
       });
 
-      // Revenue table
-      const revHeader = ['LUNA', 'TRAFIC', 'CONVERSII', 'VENIT (RON)', 'ROI'].map(t => ({
-        text: t, options: { bold: true, color: WHITE, fill: NAVY2, fontSize: 9, fontFace: 'Calibri', align: 'center' }
-      }));
-      const revRows = months.map(m => [
-        { text: `Luna ${m.month}`, options: { color: WHITE, fontSize: 9, fontFace: 'Calibri' } },
-        { text: fmtN(m.traffic), options: { color: GRAY, fontSize: 9, align: 'center', fontFace: 'Calibri' } },
-        { text: fmtN(m.conversions), options: { color: GRAY, fontSize: 9, align: 'center', fontFace: 'Calibri' } },
-        { text: fmtRON(m.revenue), options: { color: ORANGE, bold: true, fontSize: 9, align: 'center', fontFace: 'Calibri' } },
-        { text: `${m.roi >= 0 ? '+' : ''}${m.roi}%`, options: { color: m.roi >= 0 ? '16A34A' : 'DC2626', bold: true, fontSize: 9, align: 'center', fontFace: 'Calibri' } },
-      ]);
-      s3.addTable([revHeader, ...revRows], {
-        x: 8.5, y: 2.35, w: 4.33, colW: [1.0, 0.9, 0.9, 1.0, 0.53],
-        border: { type: 'solid', color: NAVY2, pt: 0.5 },
-        fill: { color: BG },
-        rowH: 0.28,
+      // info box jos
+      const iY = cntY + 4.05;
+      s3.addShape('rect', { x: PAD, y: iY, w: W - PAD * 2, h: 0.8, fill: { color: ORLIGHT }, line: { color: ORANGE, pt: 1.5 } });
+      s3.addShape('rect', { x: PAD, y: iY, w: 0.06, h: 0.8, fill: { color: ORANGE }, line: { color: ORANGE, pt: 0 } });
+      s3.addText('Traficul organic nu dispare când oprești plata — spre deosebire de Google Ads, investiția în SEO construiește un activ pe termen lung care crește în valoare în fiecare lună.', {
+        x: PAD + 0.2, y: iY + 0.08, w: W - PAD * 2 - 0.3, h: 0.65,
+        fontSize: 10, color: NAVY, fontFace: 'Calibri', valign: 'middle',
       });
 
-      await pptx.writeFile({ fileName: `SEO_Forecast_${SCEN_LABEL[scenario]}_${new Date().toISOString().slice(0,10)}.pptx` });
+      await pptx.writeFile({ fileName: `SEO_Forecast_${siteName}_${new Date().toISOString().slice(0,10)}.pptx` });
     } catch (e) {
       console.error('PPTX export error:', e);
       alert('Eroare: ' + (e?.message || String(e)));
