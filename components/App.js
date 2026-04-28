@@ -740,7 +740,7 @@ function Forecasting() {
     try {
       const PptxGenJS = (await import('pptxgenjs')).default;
       const pptx = new PptxGenJS();
-      pptx.layout = 'WIDE';
+      pptx.layout = 'LAYOUT_WIDE';
 
       const BG = '1A2B4A';
       const ORANGE = 'FF6B2B';
