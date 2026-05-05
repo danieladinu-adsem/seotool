@@ -1405,9 +1405,6 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
                   </div>
                 ))}
               </div>
-              {config.summaryText && (
-                <div style={{background:`${accentColor}0f`,border:`1px solid ${accentColor}30`,borderRadius:10,padding:"14px 16px",fontSize:13,color:C.grayDark,lineHeight:1.6}} dangerouslySetInnerHTML={{__html:linkify(config.summaryText)}}/>
-              )}
             </div>
           );
 
@@ -1443,13 +1440,13 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
           );
 
 
-          if (sec.id==="notes") return config.notesText ? (
+          if (sec.id==="notes") return config.summaryText ? (
             <div key="notes" style={{marginBottom:28}}>
               <h2 style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
                 <span style={{color:accentColor}}>📝</span> Note & recomandari
               </h2>
               <div style={{background:`${accentColor}0a`,border:`1px solid ${accentColor}25`,borderRadius:10,padding:"16px 18px",fontSize:13,color:C.grayDark,lineHeight:1.7,whiteSpace:"pre-wrap"}}>
-                {config.notesText}
+                {config.summaryText}
               </div>
             </div>
           ) : null;
@@ -1479,7 +1476,6 @@ function RaportSEO({ projects, onProjectsLoaded }) {
   const reportTitle = "Raport SEO";
   const DEFAULT_SUMMARY = `• Pagini web optimizate SEO\n\n• Articole externe\n\n• Articole de blog\n`;
   const [summaryText, setSummaryText] = useState(DEFAULT_SUMMARY);
-  const [notesText, setNotesText] = useState('');
   const maxKeywords = 999;
   const [showTrend, setShowTrend] = useState(true);
   const [showPrevPos, setShowPrevPos] = useState(true);
@@ -1509,7 +1505,7 @@ function RaportSEO({ projects, onProjectsLoaded }) {
   const project = (localProjects||projects)?.find(p=>p.id===selectedProjId);
   const p1Label = `${MONTHS_FULL[p1Month]} ${p1Year}`;
   const p2Label = `${MONTHS_FULL[p2Month]} ${p2Year}`;
-  const config = { sections, reportTitle, summaryText, notesText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords, p2Month, p2Year, showTrend, showPrevPos };
+  const config = { sections, reportTitle, summaryText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords, p2Month, p2Year, showTrend, showPrevPos };
 
 
   const sortedSections = [...sections].sort((a,b)=>a.order-b.order);
@@ -1654,13 +1650,6 @@ function RaportSEO({ projects, onProjectsLoaded }) {
                 <textarea value={summaryText} onChange={e=>setSummaryText(e.target.value)} rows={10}
                   placeholder="Ex: În luna curentă, site-ul a înregistrat îmbunătățiri semnificative..."
                   style={{width:"100%",minHeight:200,padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}
-                  onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
-              </div>
-              <div>
-                <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Note & recomandari</label>
-                <textarea value={notesText} onChange={e=>setNotesText(e.target.value)} rows={6}
-                  placeholder="Ex: Recomandăm continuarea optimizării paginilor de categorie..."
-                  style={{width:"100%",minHeight:120,padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}
                   onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
               </div>
             </div>
