@@ -1479,6 +1479,7 @@ function RaportSEO({ projects, onProjectsLoaded }) {
   const reportTitle = "Raport SEO";
   const DEFAULT_SUMMARY = `• Pagini web optimizate SEO\n\n• Articole externe\n\n• Articole de blog\n`;
   const [summaryText, setSummaryText] = useState(DEFAULT_SUMMARY);
+  const [notesText, setNotesText] = useState('');
   const maxKeywords = 999;
   const [showTrend, setShowTrend] = useState(true);
   const [showPrevPos, setShowPrevPos] = useState(true);
@@ -1508,7 +1509,7 @@ function RaportSEO({ projects, onProjectsLoaded }) {
   const project = (localProjects||projects)?.find(p=>p.id===selectedProjId);
   const p1Label = `${MONTHS_FULL[p1Month]} ${p1Year}`;
   const p2Label = `${MONTHS_FULL[p2Month]} ${p2Year}`;
-  const config = { sections, reportTitle, summaryText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords, p2Month, p2Year, showTrend, showPrevPos };
+  const config = { sections, reportTitle, summaryText, notesText, accentColor:C.orange, darkHeader:true, showLogo:true, maxKeywords, p2Month, p2Year, showTrend, showPrevPos };
 
 
   const sortedSections = [...sections].sort((a,b)=>a.order-b.order);
@@ -1653,6 +1654,13 @@ function RaportSEO({ projects, onProjectsLoaded }) {
                 <textarea value={summaryText} onChange={e=>setSummaryText(e.target.value)} rows={10}
                   placeholder="Ex: În luna curentă, site-ul a înregistrat îmbunătățiri semnificative..."
                   style={{width:"100%",minHeight:200,padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}
+                  onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
+              </div>
+              <div>
+                <label style={{fontSize:12,fontWeight:500,color:C.grayDark,display:"block",marginBottom:5}}>Note & recomandari</label>
+                <textarea value={notesText} onChange={e=>setNotesText(e.target.value)} rows={6}
+                  placeholder="Ex: Recomandăm continuarea optimizării paginilor de categorie..."
+                  style={{width:"100%",minHeight:120,padding:"9px 12px",border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,outline:"none",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}
                   onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
               </div>
             </div>
