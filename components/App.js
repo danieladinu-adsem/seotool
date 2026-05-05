@@ -1416,10 +1416,10 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
               <h2 style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
                 <span style={{color:accentColor}}>📍</span> Pozitii & Volume keywords
               </h2>
-              <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
-                <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",minWidth:600}}>
                   <thead><tr style={{background:C.gray}}>
-                    {["Keyword","🖥 Desktop",...(config.showPrevPos?["Poz. anterioară"]:[]),"Poziție inițială","Volum lunar","URL",...(config.showTrend?["Trend"]:[]),"Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em"}}>{h}</th>)}
+                    {["Keyword","🖥 Desktop",...(config.showPrevPos?["Poz. anterioară"]:[]),"Poziție inițială","Volum lunar","URL",...(config.showTrend?["Trend"]:[]),"Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap"}}>{h}</th>)}
                   </tr></thead>
                   <tbody>{[...movers].sort((a,b)=>(b.volume||0)-(a.volume||0)).slice(0,config.maxKeywords||999).map((kw,i)=>{
                     const allPos=(kw.history||[]).map(h=>h.position).filter(p=>p>0);
@@ -1536,10 +1536,12 @@ function RaportSEO({ projects, onProjectsLoaded }) {
       const w = window.open("","_blank");
       w.document.write(`<html><head><title>Raport SEO - ${project?.name||""}</title>
         <style>
+          @page{size:A4 landscape;margin:15mm 12mm;}
           body{font-family:Inter,sans-serif;margin:0;padding:20px;color:#1A2B4A;}
-          @media print{body{padding:0;}}
-          table{width:100%;border-collapse:collapse;}
-          th,td{padding:8px 12px;text-align:left;font-size:12px;}
+          @media print{body{padding:0;}table{page-break-inside:auto;}tr{page-break-inside:avoid;}}
+          table{width:100%;border-collapse:collapse;table-layout:auto;}
+          th{padding:6px 8px;text-align:left;font-size:10px;white-space:nowrap;}
+          td{padding:6px 8px;text-align:left;font-size:11px;}
           thead tr{background:#F5F6F8;}
         </style>
       </head><body>${content.innerHTML}<script>window.onload=()=>{window.print();}<\/script></body></html>`);
