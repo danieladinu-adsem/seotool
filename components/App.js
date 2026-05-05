@@ -1477,7 +1477,7 @@ function RaportSEO({ projects, onProjectsLoaded }) {
   const DEFAULT_SUMMARY = `• Pagini web optimizate SEO\n\n• Articole externe\n\n• Articole de blog\n`;
   const [summaryText, setSummaryText] = useState(DEFAULT_SUMMARY);
   const maxKeywords = 999;
-  const [showTrend, setShowTrend] = useState(true);
+  const [showTrend, setShowTrend] = useState(false);
   const [showPrevPos, setShowPrevPos] = useState(true);
   const [localProjects, setLocalProjects] = useState(projects);
   useEffect(()=>setLocalProjects(projects),[projects]);
