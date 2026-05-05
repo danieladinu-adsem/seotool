@@ -1419,7 +1419,10 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
                     {["Keyword","🖥 Desktop",...(config.showPrevPos?["Poz. anterioară"]:[]),"Poziție inițială","Volum lunar","URL",...(config.showTrend?["Trend"]:[]),"Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap"}}>{h}</th>)}
                   </tr></thead>
                   <tbody>{[...movers].sort((a,b)=>(b.volume||0)-(a.volume||0)).slice(0,config.maxKeywords||999).map((kw,i)=>{
-                    const allPos=(kw.history||[]).map(h=>h.position).filter(p=>p>0);
+                    const posDesk=getVal(kw,'position_desktop',kw.position_desktop);
+                    const posAnt=getVal(kw,'poz_anterioara',getPosAroundFirst(kw));
+                    const posInit=getVal(kw,'initial_position',kw.prevPosDesktop||kw.initial_position);
+                    const allPos=[posDesk,posAnt,posInit,...(kw.history||[]).map(h=>h.position)].filter(p=>p!=null&&p>0);
                     const best=allPos.length?Math.min(...allPos):null;
                     return(
                       <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
@@ -1430,7 +1433,7 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
                         <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="volume" fallback={kw.volume} render={v=>v>0?fmtN(v):"—"}/></td>
                         <td style={{padding:"10px 14px",whiteSpace:"nowrap"}}><EditableCell kwId={kw.id} field="url" fallback={kw.url} inputType="text" render={v=>v?<span style={{fontSize:11,color:C.orange}}>{String(v).replace(/^https?:\/\/(www\.)?/,'').slice(0,30)}</span>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>
                         {config.showTrend&&<td style={{padding:"10px 14px"}}><EvolutionMini history={kw.history}/></td>}
-                        <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="best" fallback={best} render={v=>v?<span style={{fontSize:12,color:C.green,fontWeight:700}}>#{v}</span>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>
+                        <td style={{padding:"10px 14px"}}>{best?<span style={{fontSize:12,color:C.green,fontWeight:700}}>#{best}</span>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}</td>
                       </tr>
                     );
                   })}</tbody>
