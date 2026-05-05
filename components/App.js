@@ -1295,6 +1295,23 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
     });
     return sorted[0]?.position ?? null;
   };
+  // Auto-salvare poz_anterioara din history la deschiderea raportului
+  useEffect(() => {
+    const keywords = project?.keywords || [];
+    if (!keywords.length || !supabase) return;
+    const target = new Date(config.p2Year, config.p2Month, 1).getTime();
+    (async () => {
+      for (const kw of keywords) {
+        if (kw.report_overrides?.poz_anterioara != null) continue;
+        const sorted = [...(kw.history||[])].sort((a,b)=>Math.abs(new Date(a.date).getTime()-target)-Math.abs(new Date(b.date).getTime()-target));
+        const autoVal = sorted[0]?.position ?? null;
+        if (autoVal == null) continue;
+        const overrides = {...(kw.report_overrides||{}), poz_anterioara: autoVal};
+        await supabase.from('keywords').update({report_overrides: overrides}).eq('id', String(kw.id));
+        onKeywordUpdate && onKeywordUpdate(kw.id, {report_overrides: overrides});
+      }
+    })();
+  }, [project?.id, config.p2Month, config.p2Year]); // eslint-disable-line react-hooks/exhaustive-deps
   const posNow = kws.map(k=>getPosNow(k));
   const posNowValid = posNow.filter(p=>p!=null&&p>0);
   const avgNow = posNowValid.length ? Math.round(posNowValid.reduce((a,b)=>a+b,0)/posNowValid.length) : 0;
