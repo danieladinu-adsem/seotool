@@ -1417,7 +1417,7 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
                 <span style={{color:accentColor}}>📍</span> Pozitii & Volume keywords
               </h2>
               <div style={{borderRadius:10,border:`1px solid ${C.border}`,overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",minWidth:600}}>
+                <table style={{width:"100%",borderCollapse:"collapse",minWidth:750}}>
                   <thead><tr style={{background:C.gray}}>
                     {["Keyword","🖥 Desktop",...(config.showPrevPos?["Poz. anterioară"]:[]),"Poziție inițială","Volum lunar","URL",...(config.showTrend?["Trend"]:[]),"Best"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,color:C.grayText,textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap"}}>{h}</th>)}
                   </tr></thead>
@@ -1431,7 +1431,7 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
                         {config.showPrevPos&&<td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="poz_anterioara" fallback={getPosAroundFirst(kw)} render={v=>v?<PositionBadge pos={v}/>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>}
                         <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="initial_position" fallback={kw.prevPosDesktop||kw.initial_position} render={v=>v?<PositionBadge pos={v}/>:<span style={{color:C.grayMid,fontSize:12}}>✏️ adaugă</span>}/></td>
                         <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="volume" fallback={kw.volume} render={v=>v>0?fmtN(v):"—"}/></td>
-                        <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="url" fallback={kw.url} inputType="text" render={v=>v?<span style={{fontSize:11,color:C.orange}}>{String(v).replace(/^https?:\/\/(www\.)?/,'').slice(0,30)}</span>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>
+                        <td style={{padding:"10px 14px",whiteSpace:"nowrap"}}><EditableCell kwId={kw.id} field="url" fallback={kw.url} inputType="text" render={v=>v?<span style={{fontSize:11,color:C.orange}}>{String(v).replace(/^https?:\/\/(www\.)?/,'').slice(0,30)}</span>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>
                         {config.showTrend&&<td style={{padding:"10px 14px"}}><EvolutionMini history={kw.history}/></td>}
                         <td style={{padding:"10px 14px"}}><EditableCell kwId={kw.id} field="best" fallback={best} render={v=>v?<span style={{fontSize:12,color:C.green,fontWeight:700}}>#{v}</span>:<span style={{color:C.grayMid,fontSize:12}}>—</span>}/></td>
                       </tr>
