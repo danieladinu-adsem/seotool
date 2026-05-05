@@ -1252,9 +1252,26 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
     if (field === 'initial_position') {
       const pos = val==='' ? null : parseInt(val);
       if (supabase) await supabase.from('keywords').update({initial_position: pos}).eq('id', String(kwId));
+      // check if this improves best
+      const posVal = pos && pos > 0 ? pos : null;
+      if (posVal != null) {
+        const currentBest = kw.report_overrides?.best;
+        if (currentBest == null || posVal < currentBest) {
+          const ov2 = {...(kw.report_overrides||{}), best: posVal};
+          if (supabase) await supabase.from('keywords').update({report_overrides: ov2}).eq('id', String(kwId));
+          onKeywordUpdate&&onKeywordUpdate(kwId, {initial_position: pos, report_overrides: ov2});
+          setEditingCell(null); return;
+        }
+      }
       onKeywordUpdate&&onKeywordUpdate(kwId, {initial_position: pos});
     } else {
       const overrides = {...(kw.report_overrides||{}), [field]: val===''?undefined:val};
+      // if a position field improved, also update best
+      if (['position_desktop','poz_anterioara'].includes(field) && val && parseInt(val) > 0) {
+        const posVal = parseInt(val);
+        const currentBest = kw.report_overrides?.best;
+        if (currentBest == null || posVal < currentBest) overrides.best = posVal;
+      }
       if (supabase) await supabase.from('keywords').update({report_overrides: overrides}).eq('id', String(kwId));
       onKeywordUpdate&&onKeywordUpdate(kwId, {report_overrides: overrides});
     }
@@ -1422,7 +1439,8 @@ function ReportPreview({ config, project, p1Label, p2Label, onKeywordUpdate }) {
                     const posDesk=getVal(kw,'position_desktop',kw.position_desktop);
                     const posAnt=getVal(kw,'poz_anterioara',getPosAroundFirst(kw));
                     const posInit=getVal(kw,'initial_position',kw.prevPosDesktop||kw.initial_position);
-                    const allPos=[posDesk,posAnt,posInit,...(kw.history||[]).map(h=>h.position)].filter(p=>p!=null&&p>0);
+                    const savedBest=kw.report_overrides?.best;
+                    const allPos=[posDesk,posAnt,posInit,savedBest,...(kw.history||[]).map(h=>h.position)].filter(p=>p!=null&&p>0);
                     const best=allPos.length?Math.min(...allPos):null;
                     return(
                       <tr key={i} style={{borderTop:`1px solid ${C.grayMid}`}}>
