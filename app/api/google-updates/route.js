@@ -6,18 +6,17 @@ const KEYWORDS = [
 ];
 
 const EXCLUDE_KEYWORDS = [
-  'google ads', 'paid search', 'paid media', 'ppc', ' ads ', 'adwords',
+  'google ads', 'paid search', 'paid media', 'ppc', 'adwords',
   'advertising', 'paid campaign', 'display ads', 'shopping ads',
   'performance max', 'smart bidding', 'ad spend', 'cpc', 'cpm',
 ];
 
 const FEEDS = [
   'https://searchengineland.com/feed',
-  'https://searchengineland.com/feed?paged=2',
-  'https://searchengineland.com/feed?paged=3',
+  'https://searchengineland.com/feed/?paged=2',
   'https://www.seroundtable.com/feed',
-  'https://www.seroundtable.com/feed?paged=2',
-  'https://www.seroundtable.com/feed?paged=3',
+  'https://www.seroundtable.com/feed/?paged=2',
+  'https://feeds.feedburner.com/SearchEngineLand',
 ];
 
 function decodeHtml(str) {
@@ -46,25 +45,50 @@ function parseItems(xml) {
     const link = get('link') || block.match(/<link>([^<]+)<\/link>/)?.[1]?.trim() || '';
     const pubDate = get('pubDate');
     const description = decodeHtml(get('description').replace(/<[^>]+>/g, '')).slice(0, 300);
-    items.push({ title, link, pubDate, description });
+    if (title && link) items.push({ title, link, pubDate, description });
   }
   return items;
 }
 
+async function fetchFeed(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; SEOBot/1.0)',
+        'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+      },
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) {
+      console.error(`[google-updates] ${url} returned ${res.status}`);
+      return [];
+    }
+    const text = await res.text();
+    const items = parseItems(text);
+    console.log(`[google-updates] ${url}: ${items.length} items`);
+    return items;
+  } catch (e) {
+    clearTimeout(timeout);
+    console.error(`[google-updates] fetch failed for ${url}:`, e.message);
+    return [];
+  }
+}
+
 export async function GET() {
   try {
-    const results = await Promise.allSettled(
-      FEEDS.map(url => fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 0 } }).then(r => r.text()))
-    );
+    const results = await Promise.allSettled(FEEDS.map(fetchFeed));
 
     const allItems = [];
     for (const result of results) {
-      if (result.status === 'fulfilled') {
-        allItems.push(...parseItems(result.value));
-      }
+      if (result.status === 'fulfilled') allItems.push(...result.value);
     }
 
-    // Filtrează: cel puțin un keyword relevant și niciun keyword exclus
+    console.log(`[google-updates] total raw items: ${allItems.length}`);
+
     const filtered = allItems.filter(item => {
       const text = (item.title + ' ' + item.description).toLowerCase();
       const hasRelevant = KEYWORDS.some(kw => text.includes(kw));
@@ -72,10 +96,8 @@ export async function GET() {
       return hasRelevant && !hasExcluded;
     });
 
-    // Sortează după dată descrescător
     filtered.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
 
-    // Elimină duplicate după titlu
     const seen = new Set();
     const unique = filtered.filter(item => {
       if (seen.has(item.title)) return false;
@@ -83,9 +105,10 @@ export async function GET() {
       return true;
     });
 
+    console.log(`[google-updates] filtered unique: ${unique.length}`);
     return Response.json({ items: unique.slice(0, 100) });
   } catch (e) {
     console.error('[google-updates] error:', e.message);
-    return Response.json({ items: [] });
+    return Response.json({ items: [], error: e.message });
   }
 }

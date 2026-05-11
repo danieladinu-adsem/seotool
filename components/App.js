@@ -1837,8 +1837,8 @@ function GoogleUpdates() {
     setLoading(true);
     fetch('/api/google-updates')
       .then(r => r.json())
-      .then(data => { setItems(data.items || []); setLoading(false); })
-      .catch(() => { setError('Nu s-au putut încărca știrile.'); setLoading(false); });
+      .then(data => { setItems(data.items || []); if(data.error) console.error('[google-updates]',data.error); setLoading(false); })
+      .catch(e => { setError('Nu s-au putut încărca știrile: ' + e.message); setLoading(false); });
   }, []);
 
   const fmtDate = (str) => {
