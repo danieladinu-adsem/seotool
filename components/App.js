@@ -1010,9 +1010,6 @@ function Forecasting() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700 }}>SEO Forecasting</h1>
         <div className="no-print" style={{ display: "flex", gap: 8 }}>
-          <button onClick={printForecast} style={{ padding: "9px 18px", background: C.navy, color: C.white, border: "none", borderRadius: 9, fontWeight: 600, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-            📄 Descarcă PDF
-          </button>
           <button onClick={exportToPPTX} disabled={exportingPPTX} style={{ padding: "9px 18px", background: exportingPPTX ? C.grayMid : C.orange, color: C.white, border: "none", borderRadius: 9, fontWeight: 600, fontSize: 13, cursor: exportingPPTX ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6, opacity: exportingPPTX ? 0.7 : 1 }}>
             {exportingPPTX ? "⏳ Se generează..." : "📊 Exportă PowerPoint"}
           </button>
